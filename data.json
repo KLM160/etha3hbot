@@ -1,6 +1,13 @@
 {
-  "broadcasts": {},
-  "videos": {},
-  "dialogues": {},
-  "quizzes": {}
+    "broadcasts": {
+        "item_1788523544": {
+            "title": "إذاعة عشر ذي الحجة",
+            "type": "document",
+            "file_id": "BQACAgQAAxkBAAMFapqz-SdrjwsOtDCwuL9h3kjKPPYAArYgAAKHw9BQSuPlbmp20GI9BA",
+            "text": null
+        }
+    },
+    "videos": {},
+    "dialogues": {},
+    "quizzes": {}
 }
