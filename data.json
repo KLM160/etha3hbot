@@ -1,15 +1,5 @@
 {
-    "broadcasts": {
-        "item_1788528573": {
-            "title": "Photo",
-            "files": [
-                {
-                    "file_id": "AgACAgQAAxkBAAMaapq6dU-dbNolKaSvLwuqu3cbdZwAAp8QaxuHw9BQdgqfQacOlJABAAMCAAN5AAM9BA",
-                    "type": "photo"
-                }
-            ]
-        }
-    },
+    "broadcasts": {},
     "videos": {},
     "dialogues": {},
     "quizzes": {}
