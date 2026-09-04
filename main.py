@@ -7,6 +7,7 @@ import asyncio
 import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -33,6 +34,7 @@ if not TOKEN:
 PASSCODE = os.environ.get("PASSCODE", "ibnhomaid11")
 
 DATA_FILE = "data.json"
+MAX_BATCH_FILES = 10  # الحد الأقصى للملفات في الدفعة الواحدة
 
 # حالات المحادثة للإدارة
 ADMIN_PASSCODE, ADMIN_SELECT_CAT, ADMIN_WAITING_FILES, ADMIN_WAITING_TITLE = range(4)
@@ -101,7 +103,7 @@ def sync_to_github():
         print(f"GitHub Sync Error: {e}")
 
 # ------------------------------------------
-# 🌐 السيرفر الوهمي لمنصة Render
+# 🌐 السيرفر الوهمي منصة Render
 # ------------------------------------------
 class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -115,18 +117,23 @@ def run_dummy_server():
     server.serve_forever()
 
 # ------------------------------------------
-# 🧹 دالة مساعدة لتنظيف الرسائل القديمة
+# 🧹 دالة مساعدة معالجة وحذف الرسائل بآمان
 # ------------------------------------------
 async def safe_delete_msg(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int):
     try:
         await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
+    except BadRequest:
         pass
+    except Exception as e:
+        logging.warning(f"Failed to delete msg {message_id}: {e}")
 
 # ------------------------------------------
 # 🏠 الشاشة الرئيسية العامة
 # ------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # تصفير الذاكرة المؤقتة لمنع تداخل العمليات
+    context.user_data.clear()
+
     keyboard = [
         [InlineKeyboardButton("🎙️ قسم الإذاعات المدرسية", callback_data="cat_broadcasts")],
         [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="cat_videos")],
@@ -191,51 +198,55 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("dl:"):
-        _, cat_key, item_id = data.split(":")
-        item = db.get(cat_key, {}).get(item_id)
+        # تفكيك آمن ومستقر للمعاملات
+        parts = data.split(":", 2)
+        if len(parts) == 3:
+            _, cat_key, item_id = parts
+            item = db.get(cat_key, {}).get(item_id)
 
-        if item:
-            await query.edit_message_text("⏳ **جاري جلب المحتوى من سيرفرات التليجرام...**", parse_mode="Markdown")
-            chat_id = query.message.chat_id
+            if item:
+                await query.edit_message_text("⏳ **جاري جلب المحتوى من سيرفرات التليجرام...**", parse_mode="Markdown")
+                chat_id = query.message.chat_id
 
-            file_list = item.get("files", [])
-            if not file_list and "file_id" in item:
-                file_list = [{"file_id": item.get("file_id"), "type": item.get("type", "document"), "text": item.get("text")}]
+                file_list = item.get("files", [])
+                if not file_list and "file_id" in item:
+                    file_list = [{"file_id": item.get("file_id"), "type": item.get("type", "document"), "text": item.get("text")}]
 
-            for idx, f in enumerate(file_list):
-                f_id = f.get("file_id")
-                f_type = f.get("type")
-                f_text = f.get("text")
+                for idx, f in enumerate(file_list):
+                    f_id = f.get("file_id")
+                    f_type = f.get("type")
+                    f_text = f.get("text")
 
-                if f_type == "text":
-                    await context.bot.send_message(chat_id=chat_id, text=f"📌 **{item['title']}**\n\n{f_text}", parse_mode="Markdown")
-                elif f_type == "video":
-                    await context.bot.send_video(chat_id=chat_id, video=f_id, caption=f"🎥 **{item['title']}**", parse_mode="Markdown")
-                elif f_type == "photo":
-                    await context.bot.send_photo(chat_id=chat_id, photo=f_id, caption=f"🖼️ **{item['title']}**", parse_mode="Markdown")
-                elif f_type == "audio":
-                    await context.bot.send_audio(chat_id=chat_id, audio=f_id, caption=f"🎵 **{item['title']}**", parse_mode="Markdown")
-                else:
-                    await context.bot.send_document(chat_id=chat_id, document=f_id, caption=f"📄 **{item['title']}**", parse_mode="Markdown")
+                    if f_type == "text":
+                        await context.bot.send_message(chat_id=chat_id, text=f"📌 **{item['title']}**\n\n{f_text}", parse_mode="Markdown")
+                    elif f_type == "video":
+                        await context.bot.send_video(chat_id=chat_id, video=f_id, caption=f"🎥 **{item['title']}**", parse_mode="Markdown")
+                    elif f_type == "photo":
+                        await context.bot.send_photo(chat_id=chat_id, photo=f_id, caption=f"🖼️ **{item['title']}**", parse_mode="Markdown")
+                    elif f_type == "audio":
+                        await context.bot.send_audio(chat_id=chat_id, audio=f_id, caption=f"🎵 **{item['title']}**", parse_mode="Markdown")
+                    else:
+                        await context.bot.send_document(chat_id=chat_id, document=f_id, caption=f"📄 **{item['title']}**", parse_mode="Markdown")
 
-                if idx < len(file_list) - 1:
-                    await asyncio.sleep(0.5)
+                    if idx < len(file_list) - 1:
+                        await asyncio.sleep(0.5)
 
-            await query.delete_message()
-            nav_keyboard = [
-                [InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{cat_key}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
-            ]
-            await context.bot.send_message(chat_id=chat_id, text="✨ تم الإرسال بنجاح.", reply_markup=InlineKeyboardMarkup(nav_keyboard))
-        else:
-            await query.edit_message_text("❌ لم يعد هذا المحتوى متوفراً.", reply_markup=back_to_main_markup)
+                await query.delete_message()
+                nav_keyboard = [
+                    [InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{cat_key}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+                ]
+                await context.bot.send_message(chat_id=chat_id, text="✨ تم الإرسال بنجاح.", reply_markup=InlineKeyboardMarkup(nav_keyboard))
+            else:
+                await query.edit_message_text("❌ لم يعد هذا المحتوى متوفراً.", reply_markup=back_to_main_markup)
 
     elif data == "main":
         await start(update, context)
 
 # ------------------------------------------
-# ⚙️ نظام التحكم الإداري /admin مع التنظيف
+# ⚙️ نظام التحكم الإداري /admin
 # ------------------------------------------
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
     msg = await update.message.reply_text(
         "🔒 **منطقة الإدارة والتحكم (HR Admin):**\n"
         "━━━━━━━ • 🔑 • ━━━━━━━\n\n"
@@ -249,7 +260,6 @@ async def admin_verify_passcode(update: Update, context: ContextTypes.DEFAULT_TY
     chat_id = update.effective_chat.id
     user_input = update.message.text.strip()
 
-    # حذف رسالة كلمة السر التي أرسلها المستخدم ورسالة البوت السابقة لضمان النظافة
     await safe_delete_msg(context, chat_id, update.message.message_id)
     if "last_admin_msg_id" in context.user_data:
         await safe_delete_msg(context, chat_id, context.user_data["last_admin_msg_id"])
@@ -257,7 +267,8 @@ async def admin_verify_passcode(update: Update, context: ContextTypes.DEFAULT_TY
     if user_input == PASSCODE:
         return await show_admin_panel(update, context)
     else:
-        msg = await context.bot.send_message(chat_id=chat_id, text="❌ **كلمة السر غير صحيحة.** تم إلغاء الوصول للوحة الإدارة.")
+        context.user_data.clear()
+        await context.bot.send_message(chat_id=chat_id, text="❌ **كلمة السر غير صحيحة.** تم إلغاء الوصول للوحة الإدارة.")
         return ConversationHandler.END
 
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -285,7 +296,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # ------------------------------------------
-# ➕ الإضافة المتقدمة مع مسح الأزرار القديمة
+# ➕ إضافة المحتوى مع حماية العدد المسموح
 # ------------------------------------------
 async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -320,7 +331,7 @@ async def admin_select_cat_step(update: Update, context: ContextTypes.DEFAULT_TY
     ]
 
     await query.edit_message_text(
-        "📥 **قم بأرسال الملفات أو النصوص الآن:**\n"
+        f"📥 **قم بأرسال الملفات أو النصوص الآن** (حد أقصى {MAX_BATCH_FILES} ملفات):\n"
         "(يمكنك إرسال مستندات، مقاطع، صور، أو نصوص مباشرة)\n\n"
         "عند الانتهاء، اضغط الزر أدناه لتحديد العنوان:",
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -331,6 +342,14 @@ async def admin_select_cat_step(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    
+    if "admin_files_batch" not in context.user_data:
+        context.user_data["admin_files_batch"] = []
+
+    if len(context.user_data["admin_files_batch"]) >= MAX_BATCH_FILES:
+        await update.message.reply_text(f"⚠️ **وصلت للحد الأقصى ({MAX_BATCH_FILES} ملفات)!** اضغط زر الاكتفاء للبدء في تسمية المجموعة.")
+        return ADMIN_WAITING_FILES
+
     file_id = None
     file_type = "document"
     text_content = None
@@ -351,13 +370,9 @@ async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT
         text_content = update.message.text
         file_type = "text"
 
-    # مسح القائمة/الزر السابق للحفاظ على الشات نظيفاً وبدون تكرار
     if "prompt_msg_id" in context.user_data:
         await safe_delete_msg(context, chat_id, context.user_data["prompt_msg_id"])
 
-    if "admin_files_batch" not in context.user_data:
-        context.user_data["admin_files_batch"] = []
-    
     context.user_data["admin_files_batch"].append({
         "file_id": file_id,
         "type": file_type,
@@ -371,7 +386,7 @@ async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT
     count = len(context.user_data["admin_files_batch"])
     
     new_msg = await update.message.reply_text(
-        f"📥 **تم استلام المادة رقم ({count}) بنجاح!**\nارسل المادة التالية أو اضغط الزر أدناه عند الاكتفاء:",
+        f"📥 **تم استلام المادة رقم ({count}/{MAX_BATCH_FILES}) بنجاح!**\nارسل المادة التالية أو اضغط الزر أدناه عند الاكتفاء:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
@@ -403,7 +418,6 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
     target_cat = context.user_data.get("admin_target_cat")
     files = context.user_data.get("admin_files_batch", [])
 
-    # مسح الرسائل الإدارية المؤقتة السابقة
     await safe_delete_msg(context, chat_id, update.message.message_id)
     if "prompt_msg_id" in context.user_data:
         await safe_delete_msg(context, chat_id, context.user_data["prompt_msg_id"])
@@ -433,7 +447,7 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
     return ConversationHandler.END
 
 # ------------------------------------------
-# 🗑️ نظام الحذف والمسح والتراجع
+# 🗑️ نظام الحذف والتراجع والمسح
 # ------------------------------------------
 async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -479,14 +493,17 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("اختر الملف المراد حذفه نهائياً:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("admdodell:"):
-        _, cat_key, item_id = data.split(":")
+        parts = data.split(":", 2)
         keyboard = [[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]
-        if item_id in db.get(cat_key, {}):
-            del db[cat_key][item_id]
-            save_data(db)
-            await query.edit_message_text("✅ **تم حذف الملف وتحديث GitHub تلقائياً!**", reply_markup=InlineKeyboardMarkup(keyboard))
-        else:
-            await query.edit_message_text("❌ لم يتم العثور على الملف.", reply_markup=InlineKeyboardMarkup(keyboard))
+        if len(parts) == 3:
+            _, cat_key, item_id = parts
+            if item_id in db.get(cat_key, {}):
+                del db[cat_key][item_id]
+                save_data(db)
+                await query.edit_message_text("✅ **تم حذف الملف وتحديث GitHub تلقائياً!**", reply_markup=InlineKeyboardMarkup(keyboard))
+                return
+
+        await query.edit_message_text("❌ لم يتم العثور على الملف.", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -536,7 +553,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdodell:"))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ HR Bot يعمل بنجاح ومزود بنظام تنظيف الرسائل والأزرار القديمة!")
+    print("✅ HR Bot مؤمن ومحصن من كافة الأخطاء الثنائية والدائرية!")
     app.run_polling()
 
 if __name__ == "__main__":
