@@ -30,7 +30,7 @@ PASSCODE = os.environ.get("PASSCODE", "ibnhomaid11")
 
 DATA_FILE = "data.json"
 
-# حالات المحادثة (Conversation States)
+# حالات المحادثة
 WAITING_PASSCODE, WAITING_FILE, WAITING_TITLE = range(3)
 
 # ------------------------------------------
@@ -40,7 +40,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Ibn Hamid Radio Archive Bot is Running!")
+        self.wfile.write(b"HRA Bot is Running Successfully!")
 
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
@@ -111,17 +111,18 @@ def sync_to_github():
 # ------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("🎙️ إذاعات مدرسية", callback_data="cat_broadcasts")],
-        [InlineKeyboardButton("📺 مقاطع مرئية", callback_data="cat_videos")],
-        [InlineKeyboardButton("🎧 حوارات إذاعية", callback_data="cat_dialogues")],
-        [InlineKeyboardButton("🎁 أسئلة إذاعية", callback_data="cat_quizzes")],
+        [InlineKeyboardButton("🎙️ قسم الإذاعات المدرسية", callback_data="cat_broadcasts")],
+        [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="cat_videos")],
+        [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="cat_dialogues")],
+        [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="cat_quizzes")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     welcome_text = (
-        "🎙️ **أرشيف إذاعات ابن حميد | Hamid Radio Archive**\n\n"
-        "مرحباً بك في المنصة الرقمية الموحدة لإدارة وتوثيق المحتوى الإذاعي.\n"
-        "اختر أحد الأقسام التالية للاستعراض أو إضافة محتوى جديد:"
+        "✨ **أرشيف إذاعة ابن حميد | HRA Bot**\n"
+        "━━━━━━━ • 📻 • ━━━━━━━\n\n"
+        "مرحباً بك في المنصة الرقمية الموحدة لإدارة وتوثيق المحتوى الإذاعي.\n\n"
+        "📁 **يرجى اختيار القسم المطلوب للاستعراض أو الإضافة:**"
     )
 
     if update.callback_query:
@@ -138,7 +139,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     db = load_data()
-    back_to_main = InlineKeyboardButton("« القائمة الرئيسية", callback_data="main")
+    back_to_main = InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main")
 
     if data.startswith("cat_"):
         cat_key = data.replace("cat_", "")
@@ -153,18 +154,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         keyboard = []
         
-        # قائمة المواد المضافة
+        # استعراض كافة الملفات الموجودة في هذا القسم
         for item_id, item_info in items.items():
-            keyboard.append([InlineKeyboardButton(item_info["title"], callback_data=f"get_{cat_key}_{item_id}")])
+            keyboard.append([InlineKeyboardButton(f"📄 {item_info['title']}", callback_data=f"get_{cat_key}_{item_id}")])
 
-        # زر إضافة مادة داخل القسم
-        keyboard.append([InlineKeyboardButton("➕ إضافة مادة لهذا القسم", callback_data=f"add_{cat_key}")])
+        # زر إضافة ملف جديد داخل القسم
+        keyboard.append([InlineKeyboardButton("➕ إضافة ملف لهذا القسم", callback_data=f"add_{cat_key}")])
         keyboard.append([back_to_main])
 
         if not items:
-            text = f"📂 **{cat_names.get(cat_key, '')}**\n\nلا توجد مواد مضافة في هذا القسم حالياً."
+            text = (
+                f"📂 **{cat_names.get(cat_key, '')}**\n"
+                f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
+                f"⚠️ **لا توجد ملفات مضافة في هذا القسم حالياً.**\n\n"
+                f"يمكنك إضافة ملف جديد بالضغط على الزر أدناه:"
+            )
         else:
-            text = f"📂 **{cat_names.get(cat_key, '')}**\n\nاختر المادة المراد عرضها أو تحميلها:"
+            text = (
+                f"📂 **{cat_names.get(cat_key, '')}**\n"
+                f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
+                f"👇 **اختر الملف الذي تريده من القائمة أدناه:**"
+            )
 
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
@@ -174,7 +184,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         item = db.get(cat_key, {}).get(item_id)
 
         if item:
-            await query.edit_message_text("⏳ جاري جلب المادة...")
+            await query.edit_message_text("⏳ **جاري جلب الملف المطلوب...**", parse_mode="Markdown")
             chat_id = query.message.chat_id
 
             if item["type"] == "text":
@@ -183,17 +193,24 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_video(chat_id=chat_id, video=item["file_id"], caption=f"🎥 **{item['title']}**")
             elif item["type"] == "photo":
                 await context.bot.send_photo(chat_id=chat_id, photo=item["file_id"], caption=f"🖼️ **{item['title']}**")
+            elif item["type"] == "audio":
+                await context.bot.send_audio(chat_id=chat_id, audio=item["file_id"], caption=f"🎵 **{item['title']}**")
             else:
                 await context.bot.send_document(chat_id=chat_id, document=item["file_id"], caption=f"📄 **{item['title']}**")
 
             await query.delete_message()
-            await context.bot.send_message(chat_id=chat_id, text="✨ تم الإرسال بنجاح.", reply_markup=InlineKeyboardMarkup([[back_to_main]]))
+            await context.bot.send_message(
+                chat_id=chat_id, 
+                text="✅ **تم إرسال الملف بنجاح!**", 
+                reply_markup=InlineKeyboardMarkup([[back_to_main]]),
+                parse_mode="Markdown"
+            )
 
     elif data == "main":
         await start(update, context)
 
 # ------------------------------------------
-# 🔐 نظام إدخال وإضافة المحتوى بكلمة السر
+# 🔐 نظام إضافة الملفات بكلمة السر
 # ------------------------------------------
 async def start_add_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -203,7 +220,9 @@ async def start_add_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["target_cat"] = cat_key
 
     await query.edit_message_text(
-        "🔒 **منطقة محمية:**\nرجاءً أدخل كلمة السر المعتمدة لتتمكن من إضافة المادة:",
+        "🔒 **منطقة الإدارة والرفع:**\n"
+        "━━━━━━━ • 🔑 • ━━━━━━━\n\n"
+        "رجاءً أدخل **كلمة السر المعتمدة** لتتمكن من رفع الملف:",
         parse_mode="Markdown"
     )
     return WAITING_PASSCODE
@@ -212,10 +231,14 @@ async def check_passcode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip()
 
     if user_input == PASSCODE:
-        await update.message.reply_text("✅ **رمز صحيح!**\nالآن أرسل الملف أو النص أو الفيديو المراد إضافته:")
+        await update.message.reply_text(
+            "✅ **تم التحقق بنجاح!**\n\n"
+            "📥 قم بأرسال **الملف** الآن (صوت، فيديو، مستند، صورة، أو نص):",
+            parse_mode="Markdown"
+        )
         return WAITING_FILE
     else:
-        await update.message.reply_text("❌ كلمة السر غير صحيحة. تم إلغاء العملية.")
+        await update.message.reply_text("❌ **كلمة السر غير صحيحة.** تم إلغاء العملية.")
         return ConversationHandler.END
 
 async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -232,6 +255,9 @@ async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif update.message.photo:
         file_id = update.message.photo[-1].file_id
         file_type = "photo"
+    elif update.message.audio or update.message.voice:
+        file_id = (update.message.audio or update.message.voice).file_id
+        file_type = "audio"
     elif update.message.text:
         text_content = update.message.text
         file_type = "text"
@@ -240,7 +266,11 @@ async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["file_type"] = file_type
     context.user_data["text_content"] = text_content
 
-    await update.message.reply_text("📥 **تم استلام المادة بنجاح!**\nالآن أرسل **العنوان/الاسم** المفضّل لهذه المادة:")
+    await update.message.reply_text(
+        "📥 **تم استلام الملف وقراءة المعرف تلقائياً!**\n\n"
+        "✍️ أرسل الآن **الاسم/العنوان** المفضّل لعرض هذا الملف في القائمة:",
+        parse_mode="Markdown"
+    )
     return WAITING_TITLE
 
 async def receive_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -260,8 +290,15 @@ async def receive_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.clear()
 
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("« القائمة الرئيسية", callback_data="main")]])
-    await update.message.reply_text(f"🎉 **تمت الإضافة بنجاح!**\nتم حفظ المادة باسم: `{title}`", reply_markup=keyboard, parse_mode="Markdown")
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main")]])
+    await update.message.reply_text(
+        f"🎉 **تمت إضافة الملف بنجاح!**\n"
+        f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
+        f"📌 **عنوان الملف:** `{title}`\n"
+        f"🔄 تم حفظ البيانات ومزامنتها تلقائياً.",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -280,7 +317,7 @@ def main():
         entry_points=[CallbackQueryHandler(start_add_process, pattern="^add_")],
         states={
             WAITING_PASSCODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, check_passcode)],
-            WAITING_FILE: [MessageHandler((filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.TEXT) & ~filters.COMMAND, receive_file)],
+            WAITING_FILE: [MessageHandler((filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.TEXT) & ~filters.COMMAND, receive_file)],
             WAITING_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_title)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
@@ -291,7 +328,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ البوت يعمل بنجاح ومزود بكلمة السر المعتمدة: ibnhomaid11")
+    print("✅ HRA Bot is active and running.")
     app.run_polling()
 
 if __name__ == "__main__":
