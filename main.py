@@ -59,7 +59,7 @@ DEFAULT_DATA = {
 }
 
 # ------------------------------------------
-# 📂 إدارة البيانات و GitHub
+# 📂 إدارة البيانات و GitHub المباشرة والبديلة
 # ------------------------------------------
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -77,10 +77,10 @@ def load_data():
         print(f"Error loading JSON: {e}")
         return DEFAULT_DATA
 
-def save_data(data):
+def save_data_instant(data):
+    # حفظ فورى ومباشر في السيرفر ليتوفر للطلاب باللحظة نفسها
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-    sync_to_github()
 
 def sync_to_github():
     if not GH_TOKEN or not GH_REPO:
@@ -113,6 +113,11 @@ def sync_to_github():
         requests.put(url, headers=headers, json=payload)
     except Exception as e:
         print(f"GitHub Sync Error: {e}")
+
+async def delayed_github_sync():
+    # مزامنة خلفية بعد 5 ثوانٍ لضمان استقرار البوت وعدم تعطيل تجربة المستخدم
+    await asyncio.sleep(5)
+    sync_to_github()
 
 # ------------------------------------------
 # 🌐 السيرفر الوهمي منصة Render
@@ -322,7 +327,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # ------------------------------------------
-# ➕ إضافة المحتوى مع حماية العدد المسموح
+# ➕ إضافة المحتوى مع الحفظ المباشر الفوري
 # ------------------------------------------
 async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -455,18 +460,23 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
         "title": title,
         "files": files
     }
-    save_data(db)
+
+    # 1. الحفظ المباشر الفوري في السيرفر ليتوفر للطلاب بدون انتظار
+    save_data_instant(db)
+
+    # 2. إيقاف الـ Task والمزامنة التلقائية مع GitHub في الخلفية دون تعطيل البوت
+    asyncio.create_task(delayed_github_sync())
 
     context.user_data.clear()
 
     keyboard = [[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]
     await context.bot.send_message(
         chat_id=chat_id,
-        text=f"🎉 **تمت إضافة المحتوى بنجاح!**\n"
+        text=f"🎉 **تمت إضافة المحتوى وتوفيره فوراً!**\n"
              f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
              f"📌 **العنوان:** `{title}`\n"
              f"📦 **عدد العناصر:** `{len(files)}`\n"
-             f"🔄 تم تحديث التغييرات ومزامنتها تلقائياً مع GitHub! 🚀",
+             f"⚡ الملف متاح للطلاب الآن، وجارِ الحفظ الدائم على GitHub! 🚀",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
@@ -525,8 +535,9 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _, cat_key, item_id = parts
             if item_id in db.get(cat_key, {}):
                 del db[cat_key][item_id]
-                save_data(db)
-                await query.edit_message_text("✅ **تم حذف الملف وتحديث GitHub تلقائياً!**", reply_markup=InlineKeyboardMarkup(keyboard))
+                save_data_instant(db)
+                asyncio.create_task(delayed_github_sync())
+                await query.edit_message_text("✅ **تم حذف الملف وحفظ التغييرات فوراً!**", reply_markup=InlineKeyboardMarkup(keyboard))
                 return
 
         await query.edit_message_text("❌ لم يتم العثور على الملف.", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -575,7 +586,6 @@ def main():
     app.add_handler(admin_conv)
     app.add_handler(CommandHandler("start", start))
     
-    # معالجة أزرار الإدارة الخارجة عن المحادثة بشكل عام
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^adm_main$"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^adm_"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdelcat_"))
@@ -583,7 +593,7 @@ def main():
     
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ HR Bot مؤمن بالكامل ومحلولة مشكلة زر العودة للإدارة!")
+    print("✅ HR Bot يعمل بنظام الحفظ الفوري المباشر مع التحديث الخلفي لـ GitHub!")
     app.run_polling()
 
 if __name__ == "__main__":
