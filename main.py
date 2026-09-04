@@ -162,7 +162,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     if update.callback_query:
-        await update.callback_query.edit_message_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+        try:
+            await update.callback_query.edit_message_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+        except BadRequest:
+            await context.bot.send_message(chat_id=update.callback_query.message.chat_id, text=welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
     else:
         await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
@@ -177,104 +180,108 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = load_data()
     back_to_main_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]])
 
-    if data == "about_info":
-        await query.edit_message_text(ABOUT_TEXT, reply_markup=back_to_main_markup, parse_mode="Markdown")
+    try:
+        if data == "about_info":
+            await query.edit_message_text(ABOUT_TEXT, reply_markup=back_to_main_markup, parse_mode="Markdown")
 
-    elif data == "archive_menu":
-        keyboard = [
-            [InlineKeyboardButton("🎙️ قسم الإذاعات المدرسية", callback_data="cat_broadcasts")],
-            [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="cat_videos")],
-            [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="cat_dialogues")],
-            [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="cat_quizzes")],
-            [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
-        ]
-        text = (
-            "📁 **الأرشيف الإذاعي**\n"
-            "━━━━━━━ • 📑 • ━━━━━━━\n\n"
-            "اختر القسم المطلوب للوصول إلى الملفات:"
-        )
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-
-    elif data.startswith("cat_"):
-        cat_key = data.replace("cat_", "")
-        items = db.get(cat_key, {})
-
-        cat_names = {
-            "broadcasts": "🎙️ قسم الإذاعات المدرسية",
-            "videos": "📺 قسم المقاطع المرئية",
-            "dialogues": "🎧 قسم الحوارات الإذاعية",
-            "quizzes": "🎁 قسم الأسئلة الإذاعية"
-        }
-
-        keyboard = []
-        for item_id, item_info in items.items():
-            keyboard.append([InlineKeyboardButton(f"📄 {item_info['title']}", callback_data=f"dl:{cat_key}:{item_id}")])
-
-        keyboard.append([InlineKeyboardButton("🔙 رجوع للأرشيف", callback_data="archive_menu"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")])
-
-        if not items:
+        elif data == "archive_menu":
+            keyboard = [
+                [InlineKeyboardButton("🎙️ قسم الإذاعات المدرسية", callback_data="cat_broadcasts")],
+                [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="cat_videos")],
+                [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="cat_dialogues")],
+                [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="cat_quizzes")],
+                [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+            ]
             text = (
-                f"📂 **{cat_names.get(cat_key, '')}**\n"
-                f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
-                f"⚠️ **لا توجد ملفات مضافة في هذا القسم حالياً.**"
+                "📁 **الأرشيف الإذاعي**\n"
+                "━━━━━━━ • 📑 • ━━━━━━━\n\n"
+                "اختر القسم المطلوب للوصول إلى الملفات:"
             )
-        else:
-            text = (
-                f"📂 **{cat_names.get(cat_key, '')}**\n"
-                f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
-                f"👇 **اختر الملف الذي تريده من القائمة أدناه ليتم إرساله لك فوراً:**"
-            )
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        elif data.startswith("cat_"):
+            cat_key = data.replace("cat_", "")
+            items = db.get(cat_key, {})
 
-    elif data.startswith("dl:"):
-        parts = data.split(":", 2)
-        if len(parts) == 3:
-            _, cat_key, item_id = parts
-            item = db.get(cat_key, {}).get(item_id)
+            cat_names = {
+                "broadcasts": "🎙️ قسم الإذاعات المدرسية",
+                "videos": "📺 قسم المقاطع المرئية",
+                "dialogues": "🎧 قسم الحوارات الإذاعية",
+                "quizzes": "🎁 قسم الأسئلة الإذاعية"
+            }
 
-            if item:
-                await query.edit_message_text("⏳ **جاري جلب المحتوى من سيرفرات التليجرام...**", parse_mode="Markdown")
-                chat_id = query.message.chat_id
+            keyboard = []
+            for item_id, item_info in items.items():
+                keyboard.append([InlineKeyboardButton(f"📄 {item_info['title']}", callback_data=f"dl:{cat_key}:{item_id}")])
 
-                file_list = item.get("files", [])
-                if not file_list and "file_id" in item:
-                    file_list = [{"file_id": item.get("file_id"), "type": item.get("type", "document"), "text": item.get("text")}]
+            keyboard.append([InlineKeyboardButton("🔙 رجوع للأرشيف", callback_data="archive_menu"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")])
 
-                for idx, f in enumerate(file_list):
-                    f_id = f.get("file_id")
-                    f_type = f.get("type")
-                    f_text = f.get("text")
-
-                    if f_type == "text":
-                        await context.bot.send_message(chat_id=chat_id, text=f"📌 **{item['title']}**\n\n{f_text}", parse_mode="Markdown")
-                    elif f_type == "video":
-                        await context.bot.send_video(chat_id=chat_id, video=f_id, caption=f"🎥 **{item['title']}**", parse_mode="Markdown")
-                    elif f_type == "photo":
-                        await context.bot.send_photo(chat_id=chat_id, photo=f_id, caption=f"🖼️ **{item['title']}**", parse_mode="Markdown")
-                    elif f_type == "audio":
-                        await context.bot.send_audio(chat_id=chat_id, audio=f_id, caption=f"🎵 **{item['title']}**", parse_mode="Markdown")
-                    else:
-                        await context.bot.send_document(chat_id=chat_id, document=f_id, caption=f"📄 **{item['title']}**", parse_mode="Markdown")
-
-                    if idx < len(file_list) - 1:
-                        await asyncio.sleep(0.5)
-
-                await query.delete_message()
-                nav_keyboard = [
-                    [InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{cat_key}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
-                ]
-                await context.bot.send_message(chat_id=chat_id, text="✨ تم الإرسال بنجاح.", reply_markup=InlineKeyboardMarkup(nav_keyboard))
+            if not items:
+                text = (
+                    f"📂 **{cat_names.get(cat_key, '')}**\n"
+                    f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
+                    f"⚠️ **لا توجد ملفات مضافة في هذا القسم حالياً.**"
+                )
             else:
-                await query.edit_message_text("❌ لم يعد هذا المحتوى متوفراً.", reply_markup=back_to_main_markup)
+                text = (
+                    f"📂 **{cat_names.get(cat_key, '')}**\n"
+                    f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
+                    f"👇 **اختر الملف الذي تريده من القائمة أدناه ليتم إرساله لك فوراً:**"
+                )
 
-    elif data == "main":
-        await start(update, context)
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+        elif data.startswith("dl:"):
+            parts = data.split(":", 2)
+            if len(parts) == 3:
+                _, cat_key, item_id = parts
+                item = db.get(cat_key, {}).get(item_id)
+
+                if item:
+                    await query.edit_message_text("⏳ **جاري جلب المحتوى من سيرفرات التليجرام...**", parse_mode="Markdown")
+                    chat_id = query.message.chat_id
+
+                    file_list = item.get("files", [])
+                    if not file_list and "file_id" in item:
+                        file_list = [{"file_id": item.get("file_id"), "type": item.get("type", "document"), "text": item.get("text")}]
+
+                    for idx, f in enumerate(file_list):
+                        f_id = f.get("file_id")
+                        f_type = f.get("type")
+                        f_text = f.get("text")
+
+                        if f_type == "text":
+                            await context.bot.send_message(chat_id=chat_id, text=f"📌 **{item['title']}**\n\n{f_text}", parse_mode="Markdown")
+                        elif f_type == "video":
+                            await context.bot.send_video(chat_id=chat_id, video=f_id, caption=f"🎥 **{item['title']}**", parse_mode="Markdown")
+                        elif f_type == "photo":
+                            await context.bot.send_photo(chat_id=chat_id, photo=f_id, caption=f"🖼️ **{item['title']}**", parse_mode="Markdown")
+                        elif f_type == "audio":
+                            await context.bot.send_audio(chat_id=chat_id, audio=f_id, caption=f"🎵 **{item['title']}**", parse_mode="Markdown")
+                        else:
+                            await context.bot.send_document(chat_id=chat_id, document=f_id, caption=f"📄 **{item['title']}**", parse_mode="Markdown")
+
+                        if idx < len(file_list) - 1:
+                            await asyncio.sleep(0.5)
+
+                    await query.delete_message()
+                    nav_keyboard = [
+                        [InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{cat_key}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+                    ]
+                    await context.bot.send_message(chat_id=chat_id, text="✨ تم الإرسال بنجاح.", reply_markup=InlineKeyboardMarkup(nav_keyboard))
+                else:
+                    await query.edit_message_text("❌ لم يعد هذا المحتوى متوفراً.", reply_markup=back_to_main_markup)
+
+        elif data == "main":
+            await start(update, context)
+    except BadRequest:
+        pass
 
 # ------------------------------------------
 # ⚙️ نظام التحكم الإداري /admin
 # ------------------------------------------
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # إجبار إغلاق وتصفير أي حالة محادثة قديمة معلقة
     context.user_data.clear()
     msg = await update.message.reply_text(
         "🔒 **منطقة الإدارة والتحكم (HR Admin):**\n"
@@ -316,8 +323,10 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = update.effective_chat.id
     if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
-        context.user_data["last_admin_msg_id"] = update.callback_query.message.message_id
+        try:
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        except BadRequest:
+            await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode="Markdown")
     else:
         msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode="Markdown")
         context.user_data["last_admin_msg_id"] = msg.message_id
@@ -574,6 +583,7 @@ def main():
         },
         fallbacks=[
             CommandHandler("cancel", cancel_conv),
+            CommandHandler("admin", admin_command),
             CallbackQueryHandler(admin_del_handler, pattern="^(adm_main|adm_cancel_op)$")
         ],
         per_user=True
@@ -589,7 +599,7 @@ def main():
     
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ HR Bot يعمل بنجاح وبسرعة بدون أي إضافات خارجية!")
+    print("✅ HR Bot يعمل بنجاح بدون مشاكل تعليق الحالات!")
     app.run_polling()
 
 if __name__ == "__main__":
