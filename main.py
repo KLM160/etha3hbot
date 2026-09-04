@@ -34,7 +34,7 @@ PASSCODE = os.environ.get("PASSCODE", "ibnhomaid11")
 DATA_FILE = "data.json"
 
 # حالات المحادثة للإدارة
-ADMIN_PASSCODE, ADMIN_SELECT_CAT, ADMIN_WAITING_FILE, ADMIN_WAITING_TITLE = range(4)
+ADMIN_PASSCODE, ADMIN_SELECT_CAT, ADMIN_WAITING_FILES, ADMIN_WAITING_TITLE = range(4)
 
 DEFAULT_DATA = {
     "broadcasts": {},
@@ -185,23 +185,32 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         item = db.get(cat_key, {}).get(item_id)
 
         if item:
-            await query.edit_message_text("⏳ **جاري جلب الملف من سيرفرات التليجرام...**", parse_mode="Markdown")
+            await query.edit_message_text("⏳ **جاري جلب الملفات من سيرفرات التليجرام...**", parse_mode="Markdown")
             chat_id = query.message.chat_id
 
-            if item.get("type") == "video":
-                await context.bot.send_video(chat_id=chat_id, video=item["file_id"], caption=f"🎥 **{item['title']}**\nتم الإرسال بنجاح 🚀", parse_mode="Markdown")
-            elif item.get("type") == "photo":
-                await context.bot.send_photo(chat_id=chat_id, photo=item["file_id"], caption=f"🖼️ **{item['title']}**\nتم الإرسال بنجاح 🚀", parse_mode="Markdown")
-            elif item.get("type") == "audio":
-                await context.bot.send_audio(chat_id=chat_id, audio=item["file_id"], caption=f"🎵 **{item['title']}**\nتم الإرسال بنجاح 🚀", parse_mode="Markdown")
-            else:
-                await context.bot.send_document(chat_id=chat_id, document=item["file_id"], caption=f"📄 **{item['title']}**\nتم الإرسال بنجاح 🚀", parse_mode="Markdown")
+            # دعم إرسال أكثر من ملف في المادة الواحدة (List of Files)
+            file_list = item.get("files", [])
+            if not file_list and "file_id" in item:
+                file_list = [{"file_id": item["file_id"], "type": item.get("type", "document")}]
+
+            for f in file_list:
+                f_id = f["file_id"]
+                f_type = f["type"]
+
+                if f_type == "video":
+                    await context.bot.send_video(chat_id=chat_id, video=f_id, caption=f"🎥 **{item['title']}**", parse_mode="Markdown")
+                elif f_type == "photo":
+                    await context.bot.send_photo(chat_id=chat_id, photo=f_id, caption=f"🖼️ **{item['title']}**", parse_mode="Markdown")
+                elif f_type == "audio":
+                    await context.bot.send_audio(chat_id=chat_id, audio=f_id, caption=f"🎵 **{item['title']}**", parse_mode="Markdown")
+                else:
+                    await context.bot.send_document(chat_id=chat_id, document=f_id, caption=f"📄 **{item['title']}**", parse_mode="Markdown")
 
             await query.delete_message()
             nav_keyboard = [
                 [InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{cat_key}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
             ]
-            await context.bot.send_message(chat_id=chat_id, text="✨ تم إرسال الملف بنجاح.", reply_markup=InlineKeyboardMarkup(nav_keyboard))
+            await context.bot.send_message(chat_id=chat_id, text="✨ تم إرسال كافة الملفات بنجاح.", reply_markup=InlineKeyboardMarkup(nav_keyboard))
         else:
             await query.edit_message_text("❌ لم يعد هذا الملف متوفراً.", reply_markup=back_to_main_markup)
 
@@ -231,7 +240,7 @@ async def admin_verify_passcode(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("➕ إضافة ملف جديد", callback_data="adm_add_start")],
+        [InlineKeyboardButton("➕ إضافة ملفات جديدة", callback_data="adm_add_start")],
         [InlineKeyboardButton("🗑️ حذف ملف من الأقسام", callback_data="adm_del_select_cat")],
         [InlineKeyboardButton("❌ إغلاق لوحة التحكم", callback_data="adm_close")]
     ]
@@ -251,7 +260,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # ------------------------------------------
-# ➕ إدارات إضافة وحذف الملفات داخل المحادثة الإدارية
+# ➕ الإضافة المتقدمة (تعدد الملفات والحفظ المتتابع)
 # ------------------------------------------
 async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -262,10 +271,10 @@ async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="admcat_videos")],
         [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="admcat_dialogues")],
         [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="admcat_quizzes")],
-        [InlineKeyboardButton("❌ إلغاء", callback_data="adm_close")]
+        [InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]
     ]
     await query.edit_message_text(
-        "📁 **اختر القسم الذي تريد إضافة الملف إليه:**",
+        "📁 **اختر القسم الذي تريد إضافة الملفات إليه:**",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
@@ -277,14 +286,19 @@ async def admin_select_cat_step(update: Update, context: ContextTypes.DEFAULT_TY
 
     selected_cat = query.data.replace("admcat_", "")
     context.user_data["admin_target_cat"] = selected_cat
+    context.user_data["admin_files_batch"] = []
+
+    keyboard = [[InlineKeyboardButton("✅ اكتفيت بالملفات، انتقل لتحديد العنوان", callback_data="adm_done_files")]]
 
     await query.edit_message_text(
-        "📥 **قم بأرسال الملف الآن في الشات** (صوت، فيديو، مستند، صورة، أو نص):",
+        "📥 **قم بأرسال الملف أو الملفات الآن** (يمكنك إرسال أكثر من ملف في دفعة واحدة):\n\n"
+        "عند الانتهاء من إرسال كافة الملفات، اضغط الزر أدناه لتحديد العنوان.",
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
-    return ADMIN_WAITING_FILE
+    return ADMIN_WAITING_FILES
 
-async def admin_receive_file_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_id = None
     file_type = "document"
 
@@ -301,15 +315,32 @@ async def admin_receive_file_step(update: Update, context: ContextTypes.DEFAULT_
         file_id = (update.message.audio or update.message.voice).file_id
         file_type = "audio"
 
-    if not file_id:
-        await update.message.reply_text("❌ يرجى إرسال ملف صحِّيح (مستند، صورة، فيديو، أو صوت).")
-        return ADMIN_WAITING_FILE
+    if file_id:
+        if "admin_files_batch" not in context.user_data:
+            context.user_data["admin_files_batch"] = []
+        
+        context.user_data["admin_files_batch"].append({"file_id": file_id, "type": file_type})
 
-    context.user_data["admin_file_id"] = file_id
-    context.user_data["admin_file_type"] = file_type
+        keyboard = [[InlineKeyboardButton("✅ اكتفيت بالملفات، انتقل لتحديد العنوان", callback_data="adm_done_files")]]
+        count = len(context.user_data["admin_files_batch"])
+        await update.message.reply_text(
+            f"📥 **تم استلام الملف رقم ({count}) بنجاح!**\nارسل الملف التالي أو اضغط الزر أدناه عند الاكتفاء:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+    return ADMIN_WAITING_FILES
 
-    await update.message.reply_text(
-        "📥 **تم استلام الملف بنجاح!**\n\n✍️ أرسل الآن **الاسم/العنوان الظاهر للملف** للطلاب:",
+async def admin_finish_files_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    files = context.user_data.get("admin_files_batch", [])
+    if not files:
+        await query.edit_message_text("❌ لم يتم إرسال أي ملفات بعد! يرجى إرسال ملف واحد على الأقل.")
+        return ADMIN_WAITING_FILES
+
+    await query.edit_message_text(
+        f"✍️ تم جمع `{len(files)}` ملفات.\nأرسل الآن **الاسم/العنوان الظاهر للمجموعة** للطلاب في الشات:",
         parse_mode="Markdown"
     )
     return ADMIN_WAITING_TITLE
@@ -317,32 +348,33 @@ async def admin_receive_file_step(update: Update, context: ContextTypes.DEFAULT_
 async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title = update.message.text.strip()
     target_cat = context.user_data.get("admin_target_cat")
-    file_id = context.user_data.get("admin_file_id")
-    file_type = context.user_data.get("admin_file_type")
+    files = context.user_data.get("admin_files_batch", [])
 
     item_key = f"item_{int(update.message.date.timestamp())}"
 
     db = load_data()
     db[target_cat][item_key] = {
         "title": title,
-        "file_id": file_id,
-        "type": file_type
+        "files": files
     }
     save_data(db)
 
     context.user_data.clear()
 
+    keyboard = [[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]
     await update.message.reply_text(
-        f"🎉 **تمت إضافة الملف بنجاح!**\n"
+        f"🎉 **تمت إضافة المجموعة بنجاح!**\n"
         f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
         f"📌 **العنوان:** `{title}`\n"
+        f"📦 **عدد الملفات:** `{len(files)}`\n"
         f"🔄 تم تحديث التغييرات ومزامنتها تلقائياً مع GitHub! 🚀",
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
     return ConversationHandler.END
 
 # ------------------------------------------
-# 🗑️ نظام الحذف التفاعلي للأقسام
+# 🗑️ نظام الحذف والعودة للوحة Control
 # ------------------------------------------
 async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -350,6 +382,10 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     db = load_data()
+
+    if data == "adm_main":
+        await show_admin_panel(update, context)
+        return
 
     if data == "adm_close":
         await query.delete_message()
@@ -361,7 +397,7 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="admdelcat_videos")],
             [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="admdelcat_dialogues")],
             [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="admdelcat_quizzes")],
-            [InlineKeyboardButton("❌ إغلاق", callback_data="adm_close")]
+            [InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]
         ]
         await query.edit_message_text("🗑️ **اختر القسم الذي تريد حذف ملف منه:**", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
@@ -370,24 +406,26 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         items = db.get(cat_key, {})
 
         if not items:
-            await query.edit_message_text("⚠️ **لا توجد ملفات في هذا القسم لحذفها.**")
+            keyboard = [[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]
+            await query.edit_message_text("⚠️ **لا توجد ملفات في هذا القسم لحذفها.**", reply_markup=InlineKeyboardMarkup(keyboard))
             return
 
         keyboard = []
         for item_id, item_info in items.items():
             keyboard.append([InlineKeyboardButton(f"🗑️ {item_info['title']}", callback_data=f"admdodell:{cat_key}:{item_id}")])
-        keyboard.append([InlineKeyboardButton("❌ إغلاق", callback_data="adm_close")])
+        keyboard.append([InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")])
 
         await query.edit_message_text("اختر الملف المراد حذفه نهائياً:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("admdodell:"):
         _, cat_key, item_id = data.split(":")
+        keyboard = [[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]
         if item_id in db.get(cat_key, {}):
             del db[cat_key][item_id]
             save_data(db)
-            await query.edit_message_text("✅ **تم حذف الملف وتحديث GitHub تلقائياً!**")
+            await query.edit_message_text("✅ **تم حذف الملف وتحديث GitHub تلقائياً!**", reply_markup=InlineKeyboardMarkup(keyboard))
         else:
-            await query.edit_message_text("❌ لم يتم العثور على الملف.")
+            await query.edit_message_text("❌ لم يتم العثور على الملف.", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("تم إلغاء العملية الإدارية.")
@@ -401,7 +439,6 @@ def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # محادثة الإدارة
     admin_conv = ConversationHandler(
         entry_points=[
             CommandHandler("admin", admin_command),
@@ -409,11 +446,20 @@ def main():
         ],
         states={
             ADMIN_PASSCODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_verify_passcode)],
-            ADMIN_SELECT_CAT: [CallbackQueryHandler(admin_select_cat_step, pattern="^admcat_")],
-            ADMIN_WAITING_FILE: [MessageHandler((filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE) & ~filters.COMMAND, admin_receive_file_step)],
+            ADMIN_SELECT_CAT: [
+                CallbackQueryHandler(admin_select_cat_step, pattern="^admcat_"),
+                CallbackQueryHandler(admin_del_handler, pattern="^adm_main$")
+            ],
+            ADMIN_WAITING_FILES: [
+                MessageHandler((filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE) & ~filters.COMMAND, admin_receive_files_step),
+                CallbackQueryHandler(admin_finish_files_step, pattern="^adm_done_files$")
+            ],
             ADMIN_WAITING_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_file_step)],
         },
-        fallbacks=[CommandHandler("cancel", cancel_conv)],
+        fallbacks=[
+            CommandHandler("cancel", cancel_conv),
+            CallbackQueryHandler(admin_del_handler, pattern="^adm_main$")
+        ],
         per_user=True
     )
 
@@ -424,7 +470,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdodell:"))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ HR Bot جاهز ومزود بنظام /admin الحصري المنسق!")
+    print("✅ HR Bot جاهز ومزود بزر العودة ودعم إرسال ملفات متعددة دفعة واحدة!")
     app.run_polling()
 
 if __name__ == "__main__":
