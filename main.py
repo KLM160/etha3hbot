@@ -39,6 +39,18 @@ MAX_BATCH_FILES = 10  # الحد الأقصى للملفات في الدفعة �
 # حالات المحادثة للإدارة
 ADMIN_PASSCODE, ADMIN_SELECT_CAT, ADMIN_WAITING_FILES, ADMIN_WAITING_TITLE = range(4)
 
+# نص "عن الأرشيف" الثابت
+ABOUT_TEXT = (
+    "🎙️ **عن أرشيف إذاعة ابن حميد | HR Bot**\n"
+    "━━━━━━━ • 📻 • ━━━━━━━\n\n"
+    "منصة رقمية مخصصة لتوثيق وأرشفة المحتوى الإذاعي والأنشطة الطلابية، "
+    "تهدف إلى تسهيل الوصول للإذاعات المدرسية، المقاطع المرئية، الحوارات، "
+    "والأسئلة الثقافية وبنائها وفق أحدث معايير التنظيم الرقمي.\n\n"
+    "👨‍🏫 **الإشراف العام:** أ. أبو باسل (رائد النشاط الطلابي)\n"
+    "💻 **التطوير والبرمجة:** AboZaid\n\n"
+    "✨ *هذا العمل خدمة للنشاط الطلابي والمجتمع المدرسي.*"
+)
+
 DEFAULT_DATA = {
     "broadcasts": {},
     "videos": {},
@@ -131,7 +143,6 @@ async def safe_delete_msg(context: ContextTypes.DEFAULT_TYPE, chat_id: int, mess
 # 🏠 الشاشة الرئيسية العامة
 # ------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # تصفير الذاكرة المؤقتة لمنع تداخل العمليات
     context.user_data.clear()
 
     keyboard = [
@@ -139,6 +150,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="cat_videos")],
         [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="cat_dialogues")],
         [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="cat_quizzes")],
+        [InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -165,7 +177,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db = load_data()
     back_to_main_markup = InlineKeyboardMarkup([[InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]])
 
-    if data.startswith("cat_"):
+    if data == "about_info":
+        await query.edit_message_text(ABOUT_TEXT, reply_markup=back_to_main_markup, parse_mode="Markdown")
+
+    elif data.startswith("cat_"):
         cat_key = data.replace("cat_", "")
         items = db.get(cat_key, {})
 
@@ -198,7 +213,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("dl:"):
-        # تفكيك آمن ومستقر للمعاملات
         parts = data.split(":", 2)
         if len(parts) == 3:
             _, cat_key, item_id = parts
@@ -553,7 +567,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdodell:"))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ HR Bot مؤمن ومحصن من كافة الأخطاء الثنائية والدائرية!")
+    print("✅ HR Bot مكتمل ومزود بقسم عن الأرشيف!")
     app.run_polling()
 
 if __name__ == "__main__":
