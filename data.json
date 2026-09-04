@@ -18,5 +18,16 @@
     },
     "videos": {},
     "dialogues": {},
-    "quizzes": {}
+    "quizzes": {
+        "item_1788534664": {
+            "title": "حوار",
+            "files": [
+                {
+                    "file_id": null,
+                    "type": "text",
+                    "text": "حوار"
+                }
+            ]
+        }
+    }
 }
