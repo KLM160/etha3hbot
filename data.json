@@ -16,7 +16,18 @@
             ]
         }
     },
-    "videos": {},
+    "videos": {
+        "item_1788535632": {
+            "title": "فيديو قرآني",
+            "files": [
+                {
+                    "file_id": "BAACAgQAAxkBAAIBXGqa38KjllPTSU6Ogk9wD4_bJvVhAAINIwACPczZULncPcKqF1kgPQQ",
+                    "type": "video",
+                    "text": null
+                }
+            ]
+        }
+    },
     "dialogues": {},
     "quizzes": {
         "item_1788534664": {
