@@ -146,10 +146,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
 
     keyboard = [
-        [InlineKeyboardButton("🎙️ قسم الإذاعات المدرسية", callback_data="cat_broadcasts")],
-        [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="cat_videos")],
-        [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="cat_dialogues")],
-        [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="cat_quizzes")],
+        [InlineKeyboardButton("📁 الأرشيف الإذاعي", callback_data="archive_menu")],
         [InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -158,7 +155,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✨ **أرشيف إذاعة ابن حميد | HR Bot**\n"
         "━━━━━━━ • 📻 • ━━━━━━━\n\n"
         "مرحباً بك في المنصة الرقمية الموحدة لإدارة وتوثيق المحتوى الإذاعي.\n\n"
-        "📁 **اختر أحد الأقسام التالية للاستعراض والتصفح:**"
+        "اختر أحد الخيارات التالية للاستعراض والتصفح:"
     )
 
     if update.callback_query:
@@ -167,7 +164,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
 # ------------------------------------------
-# 🔘 معالج تصفح المستخدمين
+# 🔘 معالج تصفح المستخدمين والأقسام
 # ------------------------------------------
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -179,6 +176,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "about_info":
         await query.edit_message_text(ABOUT_TEXT, reply_markup=back_to_main_markup, parse_mode="Markdown")
+
+    elif data == "archive_menu":
+        keyboard = [
+            [InlineKeyboardButton("🎙️ قسم الإذاعات المدرسية", callback_data="cat_broadcasts")],
+            [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="cat_videos")],
+            [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="cat_dialogues")],
+            [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="cat_quizzes")],
+            [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+        ]
+        text = (
+            "📁 **الأرشيف الإذاعي**\n"
+            "━━━━━━━ • 📑 • ━━━━━━━\n\n"
+            "اختر القسم المطلوب للوصول إلى الملفات:"
+        )
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("cat_"):
         cat_key = data.replace("cat_", "")
@@ -195,7 +207,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for item_id, item_info in items.items():
             keyboard.append([InlineKeyboardButton(f"📄 {item_info['title']}", callback_data=f"dl:{cat_key}:{item_id}")])
 
-        keyboard.append([InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")])
+        keyboard.append([InlineKeyboardButton("🔙 رجوع للأرشيف", callback_data="archive_menu"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")])
 
         if not items:
             text = (
@@ -562,12 +574,12 @@ def main():
 
     app.add_handler(admin_conv)
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^adm_"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdelcat_"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdodell:"))
-    app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ HR Bot مكتمل ومزود بقسم عن الأرشيف!")
+    print("✅ HR Bot يعمل بالهيكلة المجمعة والأنيقة بنجاح!")
     app.run_polling()
 
 if __name__ == "__main__":
