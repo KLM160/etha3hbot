@@ -40,7 +40,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"HRA Bot is Running Successfully!")
+        self.wfile.write(b"HR Bot is Running Successfully!")
 
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))
@@ -110,6 +110,9 @@ def sync_to_github():
 # 🎙️ الواجهة الرئيسية للبوت
 # ------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # إنهاء أي محادثة أو عملية رفع سابقة عند العودة للرئيسية
+    context.user_data.clear()
+
     keyboard = [
         [InlineKeyboardButton("🎙️ قسم الإذاعات المدرسية", callback_data="cat_broadcasts")],
         [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="cat_videos")],
@@ -119,7 +122,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     welcome_text = (
-        "✨ **أرشيف إذاعة ابن حميد | HRA Bot**\n"
+        "✨ **أرشيف إذاعة ابن حميد | HR Bot**\n"
         "━━━━━━━ • 📻 • ━━━━━━━\n\n"
         "مرحباً بك في المنصة الرقمية الموحدة لإدارة وتوثيق المحتوى الإذاعي.\n\n"
         "📁 **يرجى اختيار القسم المطلوب للاستعراض أو الإضافة:**"
@@ -139,7 +142,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     db = load_data()
-    back_to_main = InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main")
 
     if data.startswith("cat_"):
         cat_key = data.replace("cat_", "")
@@ -154,13 +156,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         keyboard = []
         
-        # استعراض كافة الملفات الموجودة في هذا القسم
+        # عرض كافة الملفات المضافة داخل القسم
         for item_id, item_info in items.items():
             keyboard.append([InlineKeyboardButton(f"📄 {item_info['title']}", callback_data=f"get_{cat_key}_{item_id}")])
 
-        # زر إضافة ملف جديد داخل القسم
+        # زر الإضافة مع زر العودة للرئيسية
         keyboard.append([InlineKeyboardButton("➕ إضافة ملف لهذا القسم", callback_data=f"add_{cat_key}")])
-        keyboard.append([back_to_main])
+        keyboard.append([InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")])
 
         if not items:
             text = (
@@ -173,7 +175,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = (
                 f"📂 **{cat_names.get(cat_key, '')}**\n"
                 f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
-                f"👇 **اختر الملف الذي تريده من القائمة أدناه:**"
+                f"👇 **اختر الملف الذي تريده من القائمة أدناه ليتم إرساله لك فوراً:**"
             )
 
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
@@ -184,9 +186,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         item = db.get(cat_key, {}).get(item_id)
 
         if item:
-            await query.edit_message_text("⏳ **جاري جلب الملف المطلوب...**", parse_mode="Markdown")
+            await query.edit_message_text("⏳ **جاري إرسال الملف من سيرفرات التليجرام...**", parse_mode="Markdown")
             chat_id = query.message.chat_id
 
+            # إرسال الملف باستخدام file_id من سيرفرات التليجرام مباشرة
             if item["type"] == "text":
                 await context.bot.send_message(chat_id=chat_id, text=f"📌 **{item['title']}**\n\n{item['text']}", parse_mode="Markdown")
             elif item["type"] == "video":
@@ -199,10 +202,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_document(chat_id=chat_id, document=item["file_id"], caption=f"📄 **{item['title']}**")
 
             await query.delete_message()
+            nav_keyboard = [
+                [InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{cat_key}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+            ]
             await context.bot.send_message(
                 chat_id=chat_id, 
                 text="✅ **تم إرسال الملف بنجاح!**", 
-                reply_markup=InlineKeyboardMarkup([[back_to_main]]),
+                reply_markup=InlineKeyboardMarkup(nav_keyboard),
                 parse_mode="Markdown"
             )
 
@@ -219,26 +225,39 @@ async def start_add_process(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cat_key = query.data.replace("add_", "")
     context.user_data["target_cat"] = cat_key
 
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{cat_key}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+    ])
+
     await query.edit_message_text(
         "🔒 **منطقة الإدارة والرفع:**\n"
         "━━━━━━━ • 🔑 • ━━━━━━━\n\n"
         "رجاءً أدخل **كلمة السر المعتمدة** لتتمكن من رفع الملف:",
+        reply_markup=keyboard,
         parse_mode="Markdown"
     )
     return WAITING_PASSCODE
 
 async def check_passcode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text.strip()
+    target_cat = context.user_data.get("target_cat", "broadcasts")
 
     if user_input == PASSCODE:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 إلغاء والرجوع للقسم", callback_data=f"cat_{target_cat}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+        ])
         await update.message.reply_text(
             "✅ **تم التحقق بنجاح!**\n\n"
             "📥 قم بأرسال **الملف** الآن (صوت، فيديو، مستند، صورة، أو نص):",
+            reply_markup=keyboard,
             parse_mode="Markdown"
         )
         return WAITING_FILE
     else:
-        await update.message.reply_text("❌ **كلمة السر غير صحيحة.** تم إلغاء العملية.")
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{target_cat}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+        ])
+        await update.message.reply_text("❌ **كلمة السر غير صحيحة.**", reply_markup=keyboard)
         return ConversationHandler.END
 
 async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -246,6 +265,7 @@ async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file_type = "text"
     text_content = None
 
+    # استخراج الـ File ID المباشر من سيرفرات التليجرام
     if update.message.document:
         file_id = update.message.document.file_id
         file_type = "document"
@@ -266,9 +286,15 @@ async def receive_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["file_type"] = file_type
     context.user_data["text_content"] = text_content
 
+    target_cat = context.user_data.get("target_cat", "broadcasts")
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 إلغاء والرجوع للقسم", callback_data=f"cat_{target_cat}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+    ])
+
     await update.message.reply_text(
-        "📥 **تم استلام الملف وقراءة المعرف تلقائياً!**\n\n"
+        "📥 **تم استلام الملف وقراءة الـ ID التلقائي من سيرفرات التليجرام!**\n\n"
         "✍️ أرسل الآن **الاسم/العنوان** المفضّل لعرض هذا الملف في القائمة:",
+        reply_markup=keyboard,
         parse_mode="Markdown"
     )
     return WAITING_TITLE
@@ -290,12 +316,14 @@ async def receive_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.clear()
 
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 القائمة الرئيسية", callback_data="main")]])
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{target_cat}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+    ])
     await update.message.reply_text(
         f"🎉 **تمت إضافة الملف بنجاح!**\n"
         f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
         f"📌 **عنوان الملف:** `{title}`\n"
-        f"🔄 تم حفظ البيانات ومزامنتها تلقائياً.",
+        f"🔄 تم حفظ الـ ID ومزامنة البيانات تلقائياً مع GitHub.",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
@@ -316,11 +344,23 @@ def main():
     add_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(start_add_process, pattern="^add_")],
         states={
-            WAITING_PASSCODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, check_passcode)],
-            WAITING_FILE: [MessageHandler((filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.TEXT) & ~filters.COMMAND, receive_file)],
-            WAITING_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_title)],
+            WAITING_PASSCODE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, check_passcode),
+                CallbackQueryHandler(button_handler, pattern="^(cat_|main)")
+            ],
+            WAITING_FILE: [
+                MessageHandler((filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.TEXT) & ~filters.COMMAND, receive_file),
+                CallbackQueryHandler(button_handler, pattern="^(cat_|main)")
+            ],
+            WAITING_TITLE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_title),
+                CallbackQueryHandler(button_handler, pattern="^(cat_|main)")
+            ],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[
+            CommandHandler("cancel", cancel),
+            CallbackQueryHandler(button_handler)
+        ],
         per_user=True
     )
 
@@ -328,7 +368,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ HRA Bot is active and running.")
+    print("✅ HR Bot is active and running.")
     app.run_polling()
 
 if __name__ == "__main__":
