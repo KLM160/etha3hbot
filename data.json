@@ -7,7 +7,14 @@
             "text": null
         }
     },
-    "videos": {},
+    "videos": {
+        "item_1788524633": {
+            "title": "مقطع قرآني",
+            "type": "video",
+            "file_id": "BAACAgQAAxkBAAMSapq4R1P1edLhTOeoXRSGG6mQELUAAr8gAAKHw9BQoJYokFyNQt09BA",
+            "text": null
+        }
+    },
     "dialogues": {},
     "quizzes": {}
 }
