@@ -574,12 +574,16 @@ def main():
 
     app.add_handler(admin_conv)
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    
+    # معالجة أزرار الإدارة الخارجة عن المحادثة بشكل عام
+    app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^adm_main$"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^adm_"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdelcat_"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdodell:"))
+    
+    app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ HR Bot يعمل بالهيكلة المجمعة والأنيقة بنجاح!")
+    print("✅ HR Bot مؤمن بالكامل ومحلولة مشكلة زر العودة للإدارة!")
     app.run_polling()
 
 if __name__ == "__main__":
