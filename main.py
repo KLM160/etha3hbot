@@ -36,8 +36,9 @@ PASSCODE = os.environ.get("PASSCODE", "ibnhomaid11")
 DATA_FILE = "data.json"
 MAX_BATCH_FILES = 10  # الحد الأقصى للملفات في الدفعة الواحدة
 
-# حالات المحادثة للإدارة
+# حالات المحادثات
 ADMIN_PASSCODE, ADMIN_SELECT_CAT, ADMIN_WAITING_FILES, ADMIN_WAITING_TITLE = range(4)
+AI_WAITING_PROMPT = 10
 
 # نص "عن الأرشيف" الثابت
 ABOUT_TEXT = (
@@ -59,7 +60,23 @@ DEFAULT_DATA = {
 }
 
 # ------------------------------------------
-# 📂 إدارة البيانات و GitHub المباشرة والبديلة
+# 🧠 المحرك الذكي المساعد (AI Generator)
+# ------------------------------------------
+def query_free_ai(prompt_text: str) -> str:
+    """توليد نصوص إذاعية ذكية ومجانية دون مفاتيح API مدفوعة"""
+    try:
+        sys_prompt = "أنت مساعد إذاعي ذكي وخبير في إعداد وتنسيق الإذاعات المدرسية والأنشطة الطلابية بأسلوب فصيح وممتع."
+        full_prompt = f"{sys_prompt}\nالطلب: {prompt_text}"
+        url = f"https://text.pollinations.ai/{requests.utils.quote(full_prompt)}"
+        res = requests.get(url, timeout=15)
+        if res.status_code == 200 and res.text.strip():
+            return res.text.strip()
+    except Exception as e:
+        print(f"AI Generation Error: {e}")
+    return "⚠️ حدث خطأ مؤقت في جلب الإجابة من الذكاء الاصطناعي، يرجى إعادة المحاولة لاحقاً."
+
+# ------------------------------------------
+# 📂 إدارة البيانات و GitHub المباشرة
 # ------------------------------------------
 def load_data():
     if not os.path.exists(DATA_FILE):
@@ -78,7 +95,6 @@ def load_data():
         return DEFAULT_DATA
 
 def save_data_instant(data):
-    # حفظ فورى ومباشر في السيرفر ليتوفر للطلاب باللحظة نفسها
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
@@ -115,7 +131,6 @@ def sync_to_github():
         print(f"GitHub Sync Error: {e}")
 
 async def delayed_github_sync():
-    # مزامنة خلفية بعد 5 ثوانٍ لضمان استقرار البوت وعدم تعطيل تجربة المستخدم
     await asyncio.sleep(5)
     sync_to_github()
 
@@ -134,7 +149,7 @@ def run_dummy_server():
     server.serve_forever()
 
 # ------------------------------------------
-# 🧹 دالة مساعدة معالجة وحذف الرسائل بآمان
+# 🧹 دالة مساعدة لحذف الرسائل بآمان
 # ------------------------------------------
 async def safe_delete_msg(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int):
     try:
@@ -152,6 +167,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [InlineKeyboardButton("📁 الأرشيف الإذاعي", callback_data="archive_menu")],
+        [InlineKeyboardButton("🤖 المساعد الإذاعي الذكي (AI)", callback_data="ai_menu")],
         [InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -159,7 +175,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "✨ **أرشيف إذاعة ابن حميد | HR Bot**\n"
         "━━━━━━━ • 📻 • ━━━━━━━\n\n"
-        "مرحباً بك في المنصة الرقمية الموحدة لإدارة وتوثيق المحتوى الإذاعي.\n\n"
+        "مرحباً بك في المنصة الرقمية الموحدة لإدارة وتوثيق المحتوى الإذاعي وتوليده بالذكاء الاصطناعي.\n\n"
         "اختر أحد الخيارات التالية للاستعراض والتصفح:"
     )
 
@@ -196,6 +212,33 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "اختر القسم المطلوب للوصول إلى الملفات:"
         )
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data == "ai_menu":
+        keyboard = [
+            [InlineKeyboardButton("📝 صياغة مقدمة إذاعية جديدة", callback_data="ai_preset_intro")],
+            [InlineKeyboardButton("❓ صياغة سؤال مسابقة إذاعية", callback_data="ai_preset_quiz")],
+            [InlineKeyboardButton("💬 كتابة سؤال حر للذكاء الاصطناعي", callback_data="ai_custom_prompt")],
+            [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+        ]
+        text = (
+            "🤖 **المساعد الإذاعي الذكي (AI Assistant)**\n"
+            "━━━━━━━ • 💡 • ━━━━━━━\n\n"
+            "يمكنك استخدام الذكاء الاصطناعي لتوليد أفكار ومحتوى إذاعي مخصص فوراً.\n\n"
+            "اختر خياراً سريعاً أو اكتب طلبك الخاص:"
+        )
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    elif data in ["ai_preset_intro", "ai_preset_quiz"]:
+        await query.edit_message_text("⏳ **جاري كتابة وتوليد المحتوى الإذاعي عبر الذكاء الاصطناعي...**", parse_mode="Markdown")
+        prompt = "اكتب مقدمة إذاعية مدرسية مشوقة وفصيحة عن العلم والاجتهاد." if data == "ai_preset_intro" else "صغ سؤالاً ثنائياً ممتعاً ومناسباً لمسابقة الإذاعة المدرسية مع خياراته والإجابة الصحيحة."
+        result = query_free_ai(prompt)
+        
+        keyboard = [
+            [InlineKeyboardButton("🔄 توليد خيار آخر", callback_data=data)],
+            [InlineKeyboardButton("🤖 العودة لقائمة الذكاء الاصطناعي", callback_data="ai_menu")],
+            [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+        ]
+        await query.edit_message_text(f"✨ **المحتوى المولد بالذكاء الاصطناعي:**\n\n{result}", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     elif data.startswith("cat_"):
         cat_key = data.replace("cat_", "")
@@ -274,6 +317,43 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start(update, context)
 
 # ------------------------------------------
+# 💬 محادثة طلبات الذكاء الاصطناعي الحرّة
+# ------------------------------------------
+async def start_ai_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    keyboard = [[InlineKeyboardButton("❌ إلغاء والعودة", callback_data="ai_menu")]]
+    await query.edit_message_text(
+        "✍️ **أرسل سؤالك أو طلبك للذكاء الاصطناعي الآن:**\n\n"
+        "*(مثال: اكتب لي مقدمة إذاعية عن معلمي، أو صغ حواراً بين طالبتين عن القراءة)*",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+    return AI_WAITING_PROMPT
+
+async def handle_ai_response(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_prompt = update.message.text.strip()
+    chat_id = update.effective_chat.id
+
+    msg = await update.message.reply_text("⏳ **جاري التفكير والتوليد عبر الذكاء الاصطناعي...**", parse_mode="Markdown")
+    result = query_free_ai(user_prompt)
+
+    await safe_delete_msg(context, chat_id, msg.message_id)
+
+    keyboard = [
+        [InlineKeyboardButton("✍️ طلب آخر", callback_data="ai_custom_prompt")],
+        [InlineKeyboardButton("🤖 العودة لقائمة الذكاء الاصطناعي", callback_data="ai_menu")],
+        [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+    ]
+    await update.message.reply_text(
+        f"✨ **المحتوى المولد للطلب (`{user_prompt}`):**\n\n{result}",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+    return ConversationHandler.END
+
+# ------------------------------------------
 # ⚙️ نظام التحكم الإداري /admin
 # ------------------------------------------
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -327,7 +407,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 # ------------------------------------------
-# ➕ إضافة المحتوى مع الحفظ المباشر الفوري
+# ➕ إضافة المحتوى
 # ------------------------------------------
 async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -461,10 +541,7 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
         "files": files
     }
 
-    # 1. الحفظ المباشر الفوري في السيرفر ليتوفر للطلاب بدون انتظار
     save_data_instant(db)
-
-    # 2. إيقاف الـ Task والمزامنة التلقائية مع GitHub في الخلفية دون تعطيل البوت
     asyncio.create_task(delayed_github_sync())
 
     context.user_data.clear()
@@ -483,7 +560,7 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
     return ConversationHandler.END
 
 # ------------------------------------------
-# 🗑️ نظام الحذف والتراجع والمسح
+# 🗑️ نظام الحذف
 # ------------------------------------------
 async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -544,7 +621,7 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    await update.message.reply_text("تم إلغاء العملية الإدارية.")
+    await update.message.reply_text("تم إلغاء العملية.")
     return ConversationHandler.END
 
 # ------------------------------------------
@@ -555,6 +632,17 @@ def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # محادثة الذكاء الاصطناعي للطلبات المخصصة
+    ai_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(start_ai_prompt, pattern="^ai_custom_prompt$")],
+        states={
+            AI_WAITING_PROMPT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_ai_response)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_conv)],
+        per_user=True
+    )
+
+    # محادثة الإدارة
     admin_conv = ConversationHandler(
         entry_points=[
             CommandHandler("admin", admin_command),
@@ -583,6 +671,7 @@ def main():
         per_user=True
     )
 
+    app.add_handler(ai_conv)
     app.add_handler(admin_conv)
     app.add_handler(CommandHandler("start", start))
     
@@ -593,7 +682,7 @@ def main():
     
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ HR Bot يعمل بنظام الحفظ الفوري المباشر مع التحديث الخلفي لـ GitHub!")
+    print("✅ HR Bot يعمل بنجاح مع قسم المساعد الإذاعي الذكي (AI)!")
     app.run_polling()
 
 if __name__ == "__main__":
