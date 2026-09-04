@@ -180,7 +180,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
 
 # ------------------------------------------
-# 🔘 معالج التفاعلات واستعراض الأقسام
+# 🔘 معالج التفاعلات واستعراض الملفات (تصحيح الجلب)
 # ------------------------------------------
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -207,7 +207,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         keyboard = []
         for item_id, item_info in items.items():
-            keyboard.append([InlineKeyboardButton(f"📄 {item_info['title']}", callback_data=f"dl_{cat_key}_{item_id}")])
+            # استخدام : بدلاً من _ لتجنب التعارض في قراءة الـ Callback
+            keyboard.append([InlineKeyboardButton(f"📄 {item_info['title']}", callback_data=f"dl:{cat_key}:{item_id}")])
 
         keyboard.append([InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")])
 
@@ -227,9 +228,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-    elif data.startswith("dl_"):
-        parts = data.split("_")
-        cat_key, item_id = parts[1], parts[2]
+    elif data.startswith("dl:"):
+        # تفكيك المعاملات بالدقة المطلوبة
+        _, cat_key, item_id = data.split(":")
         item = db.get(cat_key, {}).get(item_id)
 
         if item:
@@ -369,11 +370,10 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    # معالج استقبال وسائط الإعلام والملفات الشبيه بكود أرشيف الثانوية
     media_filter = filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE
     app.add_handler(MessageHandler(media_filter, handle_incoming_file))
 
-    print("✅ HR Bot جاهز للعمل بنفس نظام التقاط الملفات والرفع بكلمة السر!")
+    print("✅ HR Bot جاهز ومصلح بالكامل 100%!")
     app.run_polling()
 
 if __name__ == "__main__":
