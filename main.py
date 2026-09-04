@@ -115,6 +115,15 @@ def run_dummy_server():
     server.serve_forever()
 
 # ------------------------------------------
+# 🧹 دالة مساعدة لتنظيف الرسائل القديمة
+# ------------------------------------------
+async def safe_delete_msg(context: ContextTypes.DEFAULT_TYPE, chat_id: int, message_id: int):
+    try:
+        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+
+# ------------------------------------------
 # 🏠 الشاشة الرئيسية العامة
 # ------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -193,7 +202,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not file_list and "file_id" in item:
                 file_list = [{"file_id": item.get("file_id"), "type": item.get("type", "document"), "text": item.get("text")}]
 
-            # إرسال عناصر الألبوم مع إضافة تأخير آمن لتفادي Rate Limits
             for idx, f in enumerate(file_list):
                 f_id = f.get("file_id")
                 f_type = f.get("type")
@@ -225,24 +233,31 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await start(update, context)
 
 # ------------------------------------------
-# ⚙️ نظام التحكم الإداري /admin
+# ⚙️ نظام التحكم الإداري /admin مع التنظيف
 # ------------------------------------------
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    msg = await update.message.reply_text(
         "🔒 **منطقة الإدارة والتحكم (HR Admin):**\n"
         "━━━━━━━ • 🔑 • ━━━━━━━\n\n"
         "يرجى إدخال **كلمة السر المعتمدة** للوصول للوحة التحكم:",
         parse_mode="Markdown"
     )
+    context.user_data["last_admin_msg_id"] = msg.message_id
     return ADMIN_PASSCODE
 
 async def admin_verify_passcode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
     user_input = update.message.text.strip()
+
+    # حذف رسالة كلمة السر التي أرسلها المستخدم ورسالة البوت السابقة لضمان النظافة
+    await safe_delete_msg(context, chat_id, update.message.message_id)
+    if "last_admin_msg_id" in context.user_data:
+        await safe_delete_msg(context, chat_id, context.user_data["last_admin_msg_id"])
 
     if user_input == PASSCODE:
         return await show_admin_panel(update, context)
     else:
-        await update.message.reply_text("❌ **كلمة السر غير صحيحة.** تم إلغاء الوصول للوحة الإدارة.")
+        msg = await context.bot.send_message(chat_id=chat_id, text="❌ **كلمة السر غير صحيحة.** تم إلغاء الوصول للوحة الإدارة.")
         return ConversationHandler.END
 
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -259,15 +274,18 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "أهلاً بك! اختر الإجراء المطلوب أدناه:"
     )
 
+    chat_id = update.effective_chat.id
     if update.callback_query:
         await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        context.user_data["last_admin_msg_id"] = update.callback_query.message.message_id
     else:
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        msg = await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup, parse_mode="Markdown")
+        context.user_data["last_admin_msg_id"] = msg.message_id
     
     return ConversationHandler.END
 
 # ------------------------------------------
-# ➕ إضافة المحتوى مع دعم النصوص والتراجعات
+# ➕ الإضافة المتقدمة مع مسح الأزرار القديمة
 # ------------------------------------------
 async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -285,6 +303,7 @@ async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
+    context.user_data["last_admin_msg_id"] = query.message.message_id
     return ADMIN_SELECT_CAT
 
 async def admin_select_cat_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -307,9 +326,11 @@ async def admin_select_cat_step(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
+    context.user_data["prompt_msg_id"] = query.message.message_id
     return ADMIN_WAITING_FILES
 
 async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
     file_id = None
     file_type = "document"
     text_content = None
@@ -330,6 +351,10 @@ async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT
         text_content = update.message.text
         file_type = "text"
 
+    # مسح القائمة/الزر السابق للحفاظ على الشات نظيفاً وبدون تكرار
+    if "prompt_msg_id" in context.user_data:
+        await safe_delete_msg(context, chat_id, context.user_data["prompt_msg_id"])
+
     if "admin_files_batch" not in context.user_data:
         context.user_data["admin_files_batch"] = []
     
@@ -344,11 +369,13 @@ async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT
         [InlineKeyboardButton("❌ إلغاء والعودة للإدارة", callback_data="adm_cancel_op")]
     ]
     count = len(context.user_data["admin_files_batch"])
-    await update.message.reply_text(
+    
+    new_msg = await update.message.reply_text(
         f"📥 **تم استلام المادة رقم ({count}) بنجاح!**\nارسل المادة التالية أو اضغط الزر أدناه عند الاكتفاء:",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
+    context.user_data["prompt_msg_id"] = new_msg.message_id
     return ADMIN_WAITING_FILES
 
 async def admin_finish_files_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -367,12 +394,19 @@ async def admin_finish_files_step(update: Update, context: ContextTypes.DEFAULT_
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
+    context.user_data["prompt_msg_id"] = query.message.message_id
     return ADMIN_WAITING_TITLE
 
 async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
     title = update.message.text.strip()
     target_cat = context.user_data.get("admin_target_cat")
     files = context.user_data.get("admin_files_batch", [])
+
+    # مسح الرسائل الإدارية المؤقتة السابقة
+    await safe_delete_msg(context, chat_id, update.message.message_id)
+    if "prompt_msg_id" in context.user_data:
+        await safe_delete_msg(context, chat_id, context.user_data["prompt_msg_id"])
 
     item_key = f"item_{int(update.message.date.timestamp())}"
 
@@ -386,19 +420,20 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data.clear()
 
     keyboard = [[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]
-    await update.message.reply_text(
-        f"🎉 **تمت إضافة المحتوى بنجاح!**\n"
-        f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
-        f"📌 **العنوان:** `{title}`\n"
-        f"📦 **عدد العناصر:** `{len(files)}`\n"
-        f"🔄 تم تحديث التغييرات ومزامنتها تلقائياً مع GitHub! 🚀",
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=f"🎉 **تمت إضافة المحتوى بنجاح!**\n"
+             f"━━━━━━━ • 📑 • ━━━━━━━\n\n"
+             f"📌 **العنوان:** `{title}`\n"
+             f"📦 **عدد العناصر:** `{len(files)}`\n"
+             f"🔄 تم تحديث التغييرات ومزامنتها تلقائياً مع GitHub! 🚀",
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
     return ConversationHandler.END
 
 # ------------------------------------------
-# 🗑️ نظام الحذف والبحث والإلغاء
+# 🗑️ نظام الحذف والمسح والتراجع
 # ------------------------------------------
 async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -501,7 +536,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdodell:"))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ HR Bot جاهز ومصلح من الأخطاء كلياً!")
+    print("✅ HR Bot يعمل بنجاح ومزود بنظام تنظيف الرسائل والأزرار القديمة!")
     app.run_polling()
 
 if __name__ == "__main__":
