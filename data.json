@@ -1,21 +1,5 @@
 {
-    "broadcasts": {
-        "item_1788532528": {
-            "title": "تجربة",
-            "files": [
-                {
-                    "file_id": "AgACAgQAAxkBAAObaprKiojHjAnh81Dy3KzlJreP1PgAArwQaxuHw9BQehGMMNviC6wBAAMCAAN5AAM9BA",
-                    "type": "photo",
-                    "text": null
-                },
-                {
-                    "file_id": "AgACAgQAAxkBAAOcaprKinIREFg567KyoBxSYfhcah8AAr0QaxuHw9BQ-EOp7ieSN78BAAMCAAN5AAM9BA",
-                    "type": "photo",
-                    "text": null
-                }
-            ]
-        }
-    },
+    "broadcasts": {},
     "videos": {},
     "dialogues": {},
     "quizzes": {}
