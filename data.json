@@ -1,5 +1,19 @@
 {
-    "broadcasts": {},
+    "broadcasts": {
+        "item_1788528425": {
+            "title": "إذاعة عشر ذي الحجة",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAMFapqz-SdrjwsOtDCwuL9h3kjKPPYAArYgAAKHw9BQSuPlbmp20GI9BA",
+                    "type": "document"
+                },
+                {
+                    "file_id": "BQACAgQAAxkBAAMGapqz-ZJCueXFZYmvTT5OFIlJ0aMAArcgAAKHw9BQ_2QUEhcSHio9BA",
+                    "type": "document"
+                }
+            ]
+        }
+    },
     "videos": {},
     "dialogues": {},
     "quizzes": {}
