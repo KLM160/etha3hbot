@@ -50,5 +50,16 @@
             ]
         }
     },
-    "quizzes": {}
+    "quizzes": {
+        "item_1788634029": {
+            "title": "سؤال الأسبوع الثالث",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAICF2qcY5RaW5U36IWG44hvhxIPNMibAAK-IgACPczhUE28teCsFW5JPQQ",
+                    "type": "document",
+                    "text": null
+                }
+            ]
+        }
+    }
 }
