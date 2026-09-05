@@ -38,6 +38,17 @@
             ]
         }
     },
-    "dialogues": {},
+    "dialogues": {
+        "item_1788633277": {
+            "title": "على عتبات الغد \nحوار يوم الأربعاء, الأسبوع الثالث",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAICAWqcYBgE4Bao1285YGAMQsEfYD-OAAK4IgACPczhUGsV6BijTX9GPQQ",
+                    "type": "document",
+                    "text": null
+                }
+            ]
+        }
+    },
     "quizzes": {}
 }
