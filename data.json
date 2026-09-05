@@ -26,7 +26,18 @@
             ]
         }
     },
-    "videos": {},
+    "videos": {
+        "item_1788631035": {
+            "title": "الطريق إلى النجاح \nيوم الاثنين الأسبوع الثالث",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAIB3GqcV697H79_zaoVD-N5u52rzMgSAAKpIgACPczhUIq8YWE7-GzfPQQ",
+                    "type": "document",
+                    "text": null
+                }
+            ]
+        }
+    },
     "dialogues": {},
     "quizzes": {}
 }
