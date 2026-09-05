@@ -1,31 +1,5 @@
 {
-    "broadcasts": {
-        "item_1788609782": {
-            "title": "( وما أوتيتم من العلم إلا قليلا )\nإذاعة يوم الثلاثاء الأسبوع الثالث",
-            "files": [
-                {
-                    "file_id": "BQACAgQAAxkBAAIBnGqcBJ0vK9MKgtJDuMEh3XVE7ttMAALuIQACPczhULh2E1HQJDN8PQQ",
-                    "type": "document",
-                    "text": null
-                },
-                {
-                    "file_id": "BQACAgQAAxkBAAIBnWqcBJ2ERXX0t84x-ofg5namIQmcAALvIQACPczhUBenrDscs7CfPQQ",
-                    "type": "document",
-                    "text": null
-                },
-                {
-                    "file_id": "BQACAgQAAxkBAAIBnmqcBJ11t7kvFTk9Xh6B28EpXIQUAALxIQACPczhUBIP-pE179xOPQQ",
-                    "type": "document",
-                    "text": null
-                },
-                {
-                    "file_id": "BQACAgQAAxkBAAIBn2qcBJ1jxbLG6X6_tvm00myIQ79MAALwIQACPczhUDxcAWJ3700PPQQ",
-                    "type": "document",
-                    "text": null
-                }
-            ]
-        }
-    },
+    "broadcasts": {},
     "videos": {},
     "dialogues": {},
     "quizzes": {}
