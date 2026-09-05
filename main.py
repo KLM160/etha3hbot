@@ -179,11 +179,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "dialogues": "🎧 قسم الحوارات الإذاعية",
             "quizzes": "🎁 قسم الأسئلة الإذاعية"
         }
-        keyboard = [[InlineKeyboardButton(f"📄 {info['title']}", callback_data=f"dl:{cat_key}:{item_id}")] for item_id, info in items.items()]
-        keyboard.append([InlineKeyboardButton("🔙 رجوع للأرشيف", callback_data="archive_menu"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")])
 
+        keyboard = []
         text = f"📂 **{cat_names.get(cat_key, '')}**\n━━━━━━━ • 📑 • ━━━━━━━\n\n"
-        text += "👇 **اختر الملف الذي تريده:**" if items else "⚠️ **لا توجد ملفات مضافة حالياً.**"
+
+        if not items:
+            text += "⚠️ **لا توجد ملفات مضافة حالياً.**"
+        else:
+            text += "👇 **قائمة المحتوى المتاح (اضغط على الزر المخصص للتنزيل):**\n\n"
+            for idx, (item_id, info) in enumerate(items.items(), start=1):
+                # عرض العنوان كاملاً في نص الرسالة لمنع الاقتطاع
+                text += f"📌 **{idx}. {info['title']}**\n"
+                keyboard.append([InlineKeyboardButton(f"📥 استعراض المحتوى رقم ({idx})", callback_data=f"dl:{cat_key}:{item_id}")])
+                
+        keyboard.append([InlineKeyboardButton("🔙 رجوع للأرشيف", callback_data="archive_menu"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")])
         await safe_edit_text(query, text, InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("dl:"):
@@ -196,25 +205,29 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id = query.message.chat_id
                 file_list = item.get("files", [])
 
+                # إرسال الملفات صافية بدون كابشن تكراري تحت كل ملف
                 for idx, f in enumerate(file_list):
                     f_id, f_type, f_text = f.get("file_id"), f.get("type"), f.get("text")
                     if f_type == "text":
-                        await context.bot.send_message(chat_id=chat_id, text=f"📌 **{item['title']}**\n\n{f_text}", parse_mode="Markdown")
+                        await context.bot.send_message(chat_id=chat_id, text=f_text, parse_mode="Markdown")
                     elif f_type == "video":
-                        await context.bot.send_video(chat_id=chat_id, video=f_id, caption=f"🎥 **{item['title']}**", parse_mode="Markdown")
+                        await context.bot.send_video(chat_id=chat_id, video=f_id)
                     elif f_type == "photo":
-                        await context.bot.send_photo(chat_id=chat_id, photo=f_id, caption=f"🖼️ **{item['title']}**", parse_mode="Markdown")
+                        await context.bot.send_photo(chat_id=chat_id, photo=f_id)
                     elif f_type == "audio":
-                        await context.bot.send_audio(chat_id=chat_id, audio=f_id, caption=f"🎵 **{item['title']}**", parse_mode="Markdown")
+                        await context.bot.send_audio(chat_id=chat_id, audio=f_id)
                     else:
-                        await context.bot.send_document(chat_id=chat_id, document=f_id, caption=f"📄 **{item['title']}**", parse_mode="Markdown")
+                        await context.bot.send_document(chat_id=chat_id, document=f_id)
 
                     if idx < len(file_list) - 1:
                         await asyncio.sleep(0.3)
 
                 await safe_delete_msg(context, chat_id, query.message.message_id)
                 nav_kb = [[InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{cat_key}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]]
-                await context.bot.send_message(chat_id=chat_id, text="✨ تم الإرسال بنجاح.", reply_markup=InlineKeyboardMarkup(nav_kb))
+                
+                # إرسال رسالة ختامية متكاملة تحتوي على العنوان الموحد للمجموعة
+                final_caption = f"✨ **تم إرسال محتوى:**\n📌 **{item['title']}**\n\nبنقاط ومكونات متكاملة بنجاح."
+                await context.bot.send_message(chat_id=chat_id, text=final_caption, reply_markup=InlineKeyboardMarkup(nav_kb), parse_mode="Markdown")
             else:
                 await safe_edit_text(query, "❌ لم يعد هذا المحتوى متوفراً.", back_main)
 
@@ -406,9 +419,14 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await safe_edit_text(query, "⚠️ **لا توجد ملفات في هذا القسم لحذفها.**", InlineKeyboardMarkup([[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]))
             return
 
-        keyboard = [[InlineKeyboardButton(f"🗑️ {info['title']}", callback_data=f"admdodell:{cat_key}:{item_id}")] for item_id, info in items.items()]
+        keyboard = []
+        text = "🗑️ **اختر المحتوى المراد حذفه نهائياً:**\n\n"
+        for idx, (item_id, info) in enumerate(items.items(), start=1):
+            text += f"📌 **{idx}. {info['title']}**\n"
+            keyboard.append([InlineKeyboardButton(f"🗑️ حذف رقم ({idx})", callback_data=f"admdodell:{cat_key}:{item_id}")])
+
         keyboard.append([InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")])
-        await safe_edit_text(query, "اختر الملف المراد حذفه نهائياً:", InlineKeyboardMarkup(keyboard))
+        await safe_edit_text(query, text, InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("admdodell:"):
         parts = data.split(":", 2)
@@ -471,7 +489,7 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdodell:"))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    print("✅ HR Bot خفيف، سريع، ومحمي من التعليق!")
+    print("✅ HR Bot يعمل بأحدث تنسيق ومحمي بالكامل!")
     app.run_polling()
 
 if __name__ == "__main__":
