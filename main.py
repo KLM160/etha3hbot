@@ -56,13 +56,18 @@ ABOUT_TEXT = (
 DEFAULT_DATA = {"broadcasts": {}, "videos": {}, "dialogues": {}, "quizzes": {}}
 
 # ------------------------------------------
-# ☁️ دالة الرفع إلى Google Drive
+# ☁️ دالة الرفع إلى Google Drive (المُعدّلة والمُعالجة)
 # ------------------------------------------
 async def upload_file_to_gdrive(bot, file_id, file_type, text_content, filename):
     if not GDRIVE_JSON or not GDRIVE_FOLDER_ID:
         return None
     try:
-        info = json.loads(GDRIVE_JSON)
+        # 1. تنظيف السلسلة النصية وإصلاح أسطر المفتاح الخاص
+        clean_json_str = GDRIVE_JSON.strip()
+        info = json.loads(clean_json_str, strict=False)
+        if "private_key" in info:
+            info["private_key"] = info["private_key"].replace("\\n", "\n")
+
         creds = Credentials.from_service_account_info(
             info, 
             scopes=["https://www.googleapis.com/auth/drive"]
