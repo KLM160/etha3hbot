@@ -26,7 +26,18 @@
             ]
         }
     },
-    "videos": {},
+    "videos": {
+        "item_1788662132": {
+            "title": "الطريق إلى النجاح \nيوم الاثنين ، الأسبوع الثالث",
+            "files": [
+                {
+                    "file_id": "BAACAgQAAxkBAAICMGqc0SVrFzX0nmFYIcDxe6pcf1d7AAI1HQACPczpUOk-pHnspYxfPQQ",
+                    "type": "video",
+                    "text": null
+                }
+            ]
+        }
+    },
     "dialogues": {
         "item_1788633277": {
             "title": "على عتبات الغد \nحوار يوم الأربعاء, الأسبوع الثالث",
