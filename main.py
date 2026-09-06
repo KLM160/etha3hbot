@@ -56,13 +56,15 @@ ABOUT_TEXT = (
 DEFAULT_DATA = {"broadcasts": {}, "videos": {}, "dialogues": {}, "quizzes": {}}
 
 # ------------------------------------------
-# ☁️ دالة الرفع إلى Google Drive (المُعدّلة والمُعالجة)
+# ☁️ دالة الرفع إلى Google Drive (مع إرجاع تفاصيل الخطأ)
 # ------------------------------------------
 async def upload_file_to_gdrive(bot, file_id, file_type, text_content, filename):
-    if not GDRIVE_JSON or not GDRIVE_FOLDER_ID:
-        return None
+    if not GDRIVE_JSON:
+        return False, "متغيّر GDRIVE_JSON غير موجود في Render!"
+    if not GDRIVE_FOLDER_ID:
+        return False, "متغيّر GDRIVE_FOLDER_ID غير موجود في Render!"
+
     try:
-        # 1. تنظيف السلسلة النصية وإصلاح أسطر المفتاح الخاص
         clean_json_str = GDRIVE_JSON.strip()
         info = json.loads(clean_json_str, strict=False)
         if "private_key" in info:
@@ -106,10 +108,10 @@ async def upload_file_to_gdrive(bot, file_id, file_type, text_content, filename)
         }
         media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mimetype, resumable=True)
         uploaded_file = service.files().create(body=file_metadata, media_body=media, fields="id, webViewLink").execute()
-        return uploaded_file.get("webViewLink")
+        return True, uploaded_file.get("webViewLink")
     except Exception as e:
         logging.error(f"GDrive Upload Error: {e}")
-        return None
+        return False, str(e)
 
 # ------------------------------------------
 # 📂 إدارة البيانات و GitHub
@@ -574,14 +576,18 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await safe_edit_text(query, "⏳ **جاري الرفع إلى Google Drive... قد يستغرق لحظات.**")
                 files = item.get("files", [])
                 uploaded_links = []
+                last_error = ""
 
                 for idx, f in enumerate(files, start=1):
                     fname = f"{item['title']}_جزء_{idx}"
-                    link = await upload_file_to_gdrive(
+                    success, result = await upload_file_to_gdrive(
                         context.bot, f.get("file_id"), f.get("type"), f.get("text"), fname
                     )
-                    if link:
-                        uploaded_links.append(link)
+                    if success:
+                        uploaded_links.append(result)
+                    else:
+                        last_error = result
+                        break
 
                 if uploaded_links:
                     res_text = (
@@ -592,7 +598,12 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         "🔗 **تم حفظ جميع الملفات داخل مجلدك المخصص.**"
                     )
                 else:
-                    res_text = "❌ **حدث خطأ أثناء الرفع!** يرجى التأكد من إعدادات المفتاح والمجلد."
+                    res_text = (
+                        "❌ **حدث خطأ أثناء الرفع!**\n"
+                        "━━━━━━━ • ⚠️ • ━━━━━━━\n\n"
+                        "📝 **تفاصيل الخطأ الدقيقة:**\n"
+                        f"`{last_error}`"
+                    )
 
                 keyboard = [[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]
                 await safe_edit_text(query, res_text, InlineKeyboardMarkup(keyboard))
