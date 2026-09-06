@@ -4,6 +4,7 @@ import logging
 import threading
 import base64
 import asyncio
+import io
 import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -18,12 +19,19 @@ from telegram.ext import (
     ContextTypes,
 )
 
+# مكتبات Google Drive
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
+
 # إعداد السجل
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 TOKEN = os.environ.get("TOKEN")
 GH_TOKEN = os.environ.get("GH_TOKEN")
 GH_REPO = os.environ.get("GH_REPO")
+GDRIVE_JSON = os.environ.get("GDRIVE_JSON")
+GDRIVE_FOLDER_ID = os.environ.get("GDRIVE_FOLDER_ID")
 
 if not TOKEN:
     raise ValueError("❌ خطأ: لم يتم العثور على التوكن!")
@@ -46,6 +54,57 @@ ABOUT_TEXT = (
 )
 
 DEFAULT_DATA = {"broadcasts": {}, "videos": {}, "dialogues": {}, "quizzes": {}}
+
+# ------------------------------------------
+# ☁️ دالة الرفع إلى Google Drive
+# ------------------------------------------
+async def upload_file_to_gdrive(bot, file_id, file_type, text_content, filename):
+    if not GDRIVE_JSON or not GDRIVE_FOLDER_ID:
+        return None
+    try:
+        info = json.loads(GDRIVE_JSON)
+        creds = Credentials.from_service_account_info(
+            info, 
+            scopes=["https://www.googleapis.com/auth/drive"]
+        )
+        service = build("drive", "v3", credentials=creds)
+
+        file_bytes = None
+        mimetype = "application/octet-stream"
+
+        if file_type == "text":
+            file_bytes = text_content.encode("utf-8")
+            mimetype = "text/plain"
+            filename += ".txt"
+        else:
+            tg_file = await bot.get_file(file_id)
+            file_stream = io.BytesIO()
+            await tg_file.download_to_memory(file_stream)
+            file_bytes = file_stream.getvalue()
+
+            if file_type == "photo":
+                mimetype = "image/jpeg"
+                filename += ".jpg"
+            elif file_type == "video":
+                mimetype = "video/mp4"
+                filename += ".mp4"
+            elif file_type == "audio":
+                mimetype = "audio/mpeg"
+                filename += ".mp3"
+            else:
+                mimetype = "application/pdf"
+                filename += ".pdf"
+
+        file_metadata = {
+            "name": filename,
+            "parents": [GDRIVE_FOLDER_ID]
+        }
+        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mimetype, resumable=True)
+        uploaded_file = service.files().create(body=file_metadata, media_body=media, fields="id, webViewLink").execute()
+        return uploaded_file.get("webViewLink")
+    except Exception as e:
+        logging.error(f"GDrive Upload Error: {e}")
+        return None
 
 # ------------------------------------------
 # 📂 إدارة البيانات و GitHub
@@ -204,14 +263,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id = query.message.chat_id
                 file_list = item.get("files", [])
 
-                # فاصل بصري بداية كل طلب جديد لتنظيم الشات ومنع التداخل
                 await context.bot.send_message(
                     chat_id=chat_id, 
                     text=f"━━━━━━━ • 📻 **طلب جديد** • ━━━━━━━\n📦 **المحتوى:** {item['title']}", 
                     parse_mode="Markdown"
                 )
 
-                # إرسال الملفات صافية بدون كابشن تكراري
                 for idx, f in enumerate(file_list):
                     f_id, f_type, f_text = f.get("file_id"), f.get("type"), f.get("text")
                     if f_type == "text":
@@ -276,6 +333,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("➕ إضافة ملفات جديدة", callback_data="adm_add_start")],
         [InlineKeyboardButton("🗑️ حذف ملف من الأقسام", callback_data="adm_del_select_cat")],
+        [InlineKeyboardButton("☁️ رفع ملفات إلى Google Drive", callback_data="adm_drive_select_cat")],
         [InlineKeyboardButton("❌ إغلاق لوحة التحكم", callback_data="adm_close")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -399,7 +457,7 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
     return ConversationHandler.END
 
 # ------------------------------------------
-# 🗑️ الحذف والتحكم والإلغاء الموحد
+# 🗑️ الحذف والرفع والتحكم للإدارة
 # ------------------------------------------
 async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -417,6 +475,7 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_delete_msg(context, query.message.chat_id, query.message.message_id)
         return ConversationHandler.END
 
+    # --- قسم الحذف ---
     if data == "adm_del_select_cat":
         keyboard = [
             [InlineKeyboardButton("🎙️ قسم الإذاعات", callback_data="admdelcat_broadcasts")],
@@ -454,6 +513,84 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await safe_edit_text(query, "✅ **تم حذف الملف وحفظ التغييرات فوراً!**", InlineKeyboardMarkup([[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]))
                 return
         await safe_edit_text(query, "❌ لم يتم العثور على الملف.", InlineKeyboardMarkup([[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]))
+
+    # --- قسم الرفع إلى Google Drive ---
+    elif data == "adm_drive_select_cat":
+        keyboard = [
+            [InlineKeyboardButton("🎙️ قسم الإذاعات", callback_data="admdrivecat_broadcasts")],
+            [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="admdrivecat_videos")],
+            [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="admdrivecat_dialogues")],
+            [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="admdrivecat_quizzes")],
+            [InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]
+        ]
+        await safe_edit_text(query, "☁️ **اختر القسم المراد رفع ملف منه إلى Google Drive:**", InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("admdrivecat_"):
+        cat_key = data.replace("admdrivecat_", "")
+        items = db.get(cat_key, {})
+        if not items:
+            await safe_edit_text(query, "⚠️ **لا توجد ملفات في هذا القسم لرفعها.**", InlineKeyboardMarkup([[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]))
+            return
+
+        keyboard = []
+        text = "☁️ **اختر المحتوى المراد رفعه إلى Google Drive:**\n\n"
+        for idx, (item_id, info) in enumerate(items.items(), start=1):
+            text += f"📌 **{idx}. {info['title']}**\n"
+            keyboard.append([InlineKeyboardButton(f"☁️ رفع رقم ({idx})", callback_data=f"admdriveask:{cat_key}:{item_id}")])
+
+        keyboard.append([InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")])
+        await safe_edit_text(query, text, InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("admdriveask:"):
+        parts = data.split(":", 2)
+        if len(parts) == 3:
+            _, cat_key, item_id = parts
+            item = db.get(cat_key, {}).get(item_id)
+            if item:
+                keyboard = [
+                    [InlineKeyboardButton("✅ نعم، ابدأ الرفع الآن", callback_data=f"admdrivedo:{cat_key}:{item_id}")],
+                    [InlineKeyboardButton("❌ إلغاء والعودة", callback_data="adm_main")]
+                ]
+                confirm_text = (
+                    "⚠️ **تأكيد الرفع إلى Google Drive**\n"
+                    "━━━━━━━ • ☁️ • ━━━━━━━\n\n"
+                    f"📌 **العنوان:** {item['title']}\n"
+                    f"📦 **عدد العناصر:** {len(item.get('files', []))} ملفات\n\n"
+                    "هل أنت متأكد من رغبتك في رفع هذه المادة إلى مجلدك في Google Drive؟"
+                )
+                await safe_edit_text(query, confirm_text, InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("admdrivedo:"):
+        parts = data.split(":", 2)
+        if len(parts) == 3:
+            _, cat_key, item_id = parts
+            item = db.get(cat_key, {}).get(item_id)
+            if item:
+                await safe_edit_text(query, "⏳ **جاري الرفع إلى Google Drive... قد يستغرق لحظات.**")
+                files = item.get("files", [])
+                uploaded_links = []
+
+                for idx, f in enumerate(files, start=1):
+                    fname = f"{item['title']}_جزء_{idx}"
+                    link = await upload_file_to_gdrive(
+                        context.bot, f.get("file_id"), f.get("type"), f.get("text"), fname
+                    )
+                    if link:
+                        uploaded_links.append(link)
+
+                if uploaded_links:
+                    res_text = (
+                        "🎉 **تم الرفع إلى Google Drive بنجاح!**\n"
+                        "━━━━━━━ • ☁️ • ━━━━━━━\n\n"
+                        f"📌 **العنوان:** {item['title']}\n"
+                        f"📦 **عدد الملفات المرفوعة:** {len(uploaded_links)}\n\n"
+                        "🔗 **تم حفظ جميع الملفات داخل مجلدك المخصص.**"
+                    )
+                else:
+                    res_text = "❌ **حدث خطأ أثناء الرفع!** يرجى التأكد من إعدادات المفتاح والمجلد."
+
+                keyboard = [[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]
+                await safe_edit_text(query, res_text, InlineKeyboardMarkup(keyboard))
 
 async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -506,6 +643,9 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^adm_"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdelcat_"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdodell:"))
+    app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdrivecat_"))
+    app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdriveask:"))
+    app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdrivedo:"))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("✅ HR Bot يعمل بأحدث تنسيق ومحمي بالكامل!")
