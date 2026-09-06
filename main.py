@@ -188,10 +188,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             text += "👇 **قائمة المحتوى المتاح (اضغط على الزر المخصص للتنزيل):**\n\n"
             for idx, (item_id, info) in enumerate(items.items(), start=1):
-                # عرض العنوان كاملاً في نص الرسالة لمنع الاقتطاع
                 text += f"📌 **{idx}. {info['title']}**\n"
                 keyboard.append([InlineKeyboardButton(f"📥 استعراض المحتوى رقم ({idx})", callback_data=f"dl:{cat_key}:{item_id}")])
-                
+
         keyboard.append([InlineKeyboardButton("🔙 رجوع للأرشيف", callback_data="archive_menu"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")])
         await safe_edit_text(query, text, InlineKeyboardMarkup(keyboard))
 
@@ -205,7 +204,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id = query.message.chat_id
                 file_list = item.get("files", [])
 
-                # إرسال الملفات صافية بدون كابشن تكراري تحت كل ملف
+                # فاصل بصري بداية كل طلب جديد لتنظيم الشات ومنع التداخل
+                await context.bot.send_message(
+                    chat_id=chat_id, 
+                    text=f"━━━━━━━ • 📻 **طلب جديد** • ━━━━━━━\n📦 **المحتوى:** {item['title']}", 
+                    parse_mode="Markdown"
+                )
+
+                # إرسال الملفات صافية بدون كابشن تكراري
                 for idx, f in enumerate(file_list):
                     f_id, f_type, f_text = f.get("file_id"), f.get("type"), f.get("text")
                     if f_type == "text":
@@ -224,9 +230,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 await safe_delete_msg(context, chat_id, query.message.message_id)
                 nav_kb = [[InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{cat_key}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]]
-                
-                # إرسال رسالة ختامية متكاملة تحتوي على العنوان الموحد للمجموعة
-                final_caption = f"✨ **تم إرسال محتوى:**\n📌 **{item['title']}**\n\nبنقاط ومكونات متكاملة بنجاح."
+
+                final_caption = f"✨ **تم إرسال المحتوى الموصل بنجاح:**\n📌 **{item['title']}**\n━━━━━━━ • 🏁 • ━━━━━━━"
                 await context.bot.send_message(chat_id=chat_id, text=final_caption, reply_markup=InlineKeyboardMarkup(nav_kb), parse_mode="Markdown")
             else:
                 await safe_edit_text(query, "❌ لم يعد هذا المحتوى متوفراً.", back_main)
@@ -236,12 +241,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ------------------------------------------
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
+    keyboard = [[InlineKeyboardButton("❌ إلغاء الإدخال", callback_data="adm_cancel_passcode")]]
     msg = await update.message.reply_text(
         "🔒 **منطقة الإدارة والتحكم:**\nيرجى إدخال **كلمة السر المعتمدة**:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
     context.user_data["last_msg_id"] = msg.message_id
     return ADMIN_PASSCODE
+
+async def admin_cancel_passcode_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data.clear()
+    await safe_delete_msg(context, query.message.chat_id, query.message.message_id)
+    await context.bot.send_message(chat_id=query.message.chat_id, text="🚫 تم إلغاء دخول الإدارة.")
+    return ConversationHandler.END
 
 async def admin_verify_passcode(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -384,7 +399,7 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
     return ConversationHandler.END
 
 # ------------------------------------------
-# 🗑️ الحذف والتحكم
+# 🗑️ الحذف والتحكم والإلغاء الموحد
 # ------------------------------------------
 async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -395,12 +410,12 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data in ["adm_main", "adm_cancel_op"]:
         context.user_data.clear()
         await show_admin_panel(update, context)
-        return
+        return ConversationHandler.END
 
     if data == "adm_close":
         context.user_data.clear()
         await safe_delete_msg(context, query.message.chat_id, query.message.message_id)
-        return
+        return ConversationHandler.END
 
     if data == "adm_del_select_cat":
         keyboard = [
@@ -459,7 +474,10 @@ def main():
             CallbackQueryHandler(admin_add_start, pattern="^adm_add_start$")
         ],
         states={
-            ADMIN_PASSCODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_verify_passcode)],
+            ADMIN_PASSCODE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_verify_passcode),
+                CallbackQueryHandler(admin_cancel_passcode_handler, pattern="^adm_cancel_passcode$")
+            ],
             ADMIN_SELECT_CAT: [
                 CallbackQueryHandler(admin_select_cat_step, pattern="^admcat_"),
                 CallbackQueryHandler(admin_del_handler, pattern="^(adm_main|adm_cancel_op)$")
@@ -477,7 +495,8 @@ def main():
         fallbacks=[
             CommandHandler("cancel", cancel_conv),
             CommandHandler("admin", admin_command),
-            CallbackQueryHandler(admin_del_handler, pattern="^(adm_main|adm_cancel_op)$")
+            CallbackQueryHandler(admin_del_handler, pattern="^(adm_main|adm_cancel_op)$"),
+            CallbackQueryHandler(admin_cancel_passcode_handler, pattern="^adm_cancel_passcode$")
         ],
         per_user=True
     )
