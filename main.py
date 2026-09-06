@@ -22,7 +22,7 @@ from telegram.ext import (
 # مكتبات Google Drive
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaFileUpload
 
 # إعداد السجل
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -56,7 +56,7 @@ ABOUT_TEXT = (
 DEFAULT_DATA = {"broadcasts": {}, "videos": {}, "dialogues": {}, "quizzes": {}}
 
 # ------------------------------------------
-# ☁️ دالة الرفع إلى Google Drive (مع إرجاع تفاصيل الخطأ)
+# ☁️ دالة الرفع إلى Google Drive (معالجة الملفات الكبيرة)
 # ------------------------------------------
 async def upload_file_to_gdrive(bot, file_id, file_type, text_content, filename):
     if not GDRIVE_JSON:
@@ -64,6 +64,7 @@ async def upload_file_to_gdrive(bot, file_id, file_type, text_content, filename)
     if not GDRIVE_FOLDER_ID:
         return False, "متغيّر GDRIVE_FOLDER_ID غير موجود في Render!"
 
+    temp_path = None
     try:
         clean_json_str = GDRIVE_JSON.strip()
         info = json.loads(clean_json_str, strict=False)
@@ -76,18 +77,15 @@ async def upload_file_to_gdrive(bot, file_id, file_type, text_content, filename)
         )
         service = build("drive", "v3", credentials=creds)
 
-        file_bytes = None
         mimetype = "application/octet-stream"
 
         if file_type == "text":
             file_bytes = text_content.encode("utf-8")
             mimetype = "text/plain"
             filename += ".txt"
+            media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mimetype, resumable=True)
         else:
             tg_file = await bot.get_file(file_id)
-            file_stream = io.BytesIO()
-            await tg_file.download_to_memory(file_stream)
-            file_bytes = file_stream.getvalue()
 
             if file_type == "photo":
                 mimetype = "image/jpeg"
@@ -102,14 +100,26 @@ async def upload_file_to_gdrive(bot, file_id, file_type, text_content, filename)
                 mimetype = "application/pdf"
                 filename += ".pdf"
 
+            # تنزيل مؤقت في القرص لتجاوز حد ذاكرة الرام واستغلال الـ Ephemeral Disk
+            temp_path = f"temp_{file_id}_{filename}"
+            await tg_file.download_to_drive(temp_path)
+            media = MediaFileUpload(temp_path, mimetype=mimetype, resumable=True)
+
         file_metadata = {
             "name": filename,
             "parents": [GDRIVE_FOLDER_ID]
         }
-        media = MediaIoBaseUpload(io.BytesIO(file_bytes), mimetype=mimetype, resumable=True)
+        
         uploaded_file = service.files().create(body=file_metadata, media_body=media, fields="id, webViewLink").execute()
+        
+        # حذف الملف المؤقت فور انتهاء الرفع لحفظ مساحة السيرفر
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
+
         return True, uploaded_file.get("webViewLink")
     except Exception as e:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
         logging.error(f"GDrive Upload Error: {e}")
         return False, str(e)
 
