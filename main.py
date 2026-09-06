@@ -56,7 +56,7 @@ ABOUT_TEXT = (
 DEFAULT_DATA = {"broadcasts": {}, "videos": {}, "dialogues": {}, "quizzes": {}}
 
 # ------------------------------------------
-# ☁️ دالة الرفع إلى Google Drive (معالجة الملفات الكبيرة)
+# ☁️ دالة الرفع إلى Google Drive (دعم المجلدات المشاركة والملفات)
 # ------------------------------------------
 async def upload_file_to_gdrive(bot, file_id, file_type, text_content, filename):
     if not GDRIVE_JSON:
@@ -100,7 +100,6 @@ async def upload_file_to_gdrive(bot, file_id, file_type, text_content, filename)
                 mimetype = "application/pdf"
                 filename += ".pdf"
 
-            # تنزيل مؤقت في القرص لتجاوز حد ذاكرة الرام واستغلال الـ Ephemeral Disk
             temp_path = f"temp_{file_id}_{filename}"
             await tg_file.download_to_drive(temp_path)
             media = MediaFileUpload(temp_path, mimetype=mimetype, resumable=True)
@@ -110,9 +109,14 @@ async def upload_file_to_gdrive(bot, file_id, file_type, text_content, filename)
             "parents": [GDRIVE_FOLDER_ID]
         }
         
-        uploaded_file = service.files().create(body=file_metadata, media_body=media, fields="id, webViewLink").execute()
+        # إضافة supportsAllDrives لتفادي خطأ Quota المجلدات المشاركة
+        uploaded_file = service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields="id, webViewLink",
+            supportsAllDrives=True
+        ).execute()
         
-        # حذف الملف المؤقت فور انتهاء الرفع لحفظ مساحة السيرفر
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
