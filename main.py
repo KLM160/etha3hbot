@@ -45,7 +45,7 @@ ABOUT_TEXT = (
     "✨ *هذا العمل خدمة للنشاط الطلابي والمجتمع المدرسي.*"
 )
 
-DEFAULT_DATA = {"broadcasts": {}, "videos": {}, "dialogues": {}, "quizzes": {}}
+DEFAULT_DATA = {"broadcasts": {}, "videos": {}, "dialogues": {}, "quizzes": {}, "general_archive": {}}
 
 # ------------------------------------------
 # 📂 إدارة البيانات و GitHub
@@ -165,6 +165,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="cat_videos")],
             [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="cat_dialogues")],
             [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="cat_quizzes")],
+            [InlineKeyboardButton("🗄️ الأرشيف العام (المحتوى المكتمل)", callback_data="cat_general_archive")],
             [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
         ]
         text = "📁 **الأرشيف الإذاعي**\n━━━━━━━ • 📑 • ━━━━━━━\n\nاختر القسم المطلوب للوصول إلى الملفات:"
@@ -177,7 +178,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "broadcasts": "🎙️ قسم الإذاعات المدرسية",
             "videos": "📺 قسم المقاطع المرئية",
             "dialogues": "🎧 قسم الحوارات الإذاعية",
-            "quizzes": "🎁 قسم الأسئلة الإذاعية"
+            "quizzes": "🎁 قسم الأسئلة الإذاعية",
+            "general_archive": "🗄️ الأرشيف العام (المحتوى المكتمل)"
         }
 
         keyboard = []
@@ -204,14 +206,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 chat_id = query.message.chat_id
                 file_list = item.get("files", [])
 
-                # فاصل بصري بداية كل طلب جديد لتنظيم الشات ومنع التداخل
                 await context.bot.send_message(
                     chat_id=chat_id, 
                     text=f"━━━━━━━ • 📻 **طلب جديد** • ━━━━━━━\n📦 **المحتوى:** {item['title']}", 
                     parse_mode="Markdown"
                 )
 
-                # إرسال الملفات صافية بدون كابشن تكراري
                 for idx, f in enumerate(file_list):
                     f_id, f_type, f_text = f.get("file_id"), f.get("type"), f.get("text")
                     if f_type == "text":
@@ -275,6 +275,7 @@ async def admin_verify_passcode(update: Update, context: ContextTypes.DEFAULT_TY
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("➕ إضافة ملفات جديدة", callback_data="adm_add_start")],
+        [InlineKeyboardButton("📦 نقل محتوى إلى الأرشيف العام", callback_data="adm_move_select_cat")],
         [InlineKeyboardButton("🗑️ حذف ملف من الأقسام", callback_data="adm_del_select_cat")],
         [InlineKeyboardButton("❌ إغلاق لوحة التحكم", callback_data="adm_close")]
     ]
@@ -399,7 +400,7 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
     return ConversationHandler.END
 
 # ------------------------------------------
-# 🗑️ الحذف والتحكم والإلغاء الموحد
+# 🗑️ الحذف، النقل للإرشيف العام، والتحكم
 # ------------------------------------------
 async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -417,12 +418,14 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_delete_msg(context, query.message.chat_id, query.message.message_id)
         return ConversationHandler.END
 
+    # --- قسم الحذف ---
     if data == "adm_del_select_cat":
         keyboard = [
             [InlineKeyboardButton("🎙️ قسم الإذاعات", callback_data="admdelcat_broadcasts")],
             [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="admdelcat_videos")],
             [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="admdelcat_dialogues")],
             [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="admdelcat_quizzes")],
+            [InlineKeyboardButton("🗄️ الأرشيف العام", callback_data="admdelcat_general_archive")],
             [InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]
         ]
         await safe_edit_text(query, "🗑️ **اختر القسم الذي تريد حذف ملف منه:**", InlineKeyboardMarkup(keyboard))
@@ -454,6 +457,56 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await safe_edit_text(query, "✅ **تم حذف الملف وحفظ التغييرات فوراً!**", InlineKeyboardMarkup([[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]))
                 return
         await safe_edit_text(query, "❌ لم يتم العثور على الملف.", InlineKeyboardMarkup([[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]))
+
+    # --- قسم النقل إلى الأرشيف العام ---
+    elif data == "adm_move_select_cat":
+        keyboard = [
+            [InlineKeyboardButton("🎙️ قسم الإذاعات", callback_data="admmovecat_broadcasts")],
+            [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="admmovecat_videos")],
+            [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="admmovecat_dialogues")],
+            [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="admmovecat_quizzes")],
+            [InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]
+        ]
+        await safe_edit_text(query, "📦 **اختر القسم الرئيسي لنقل محتوى منه إلى (الأرشيف العام):**", InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("admmovecat_"):
+        cat_key = data.replace("admmovecat_", "")
+        items = db.get(cat_key, {})
+        if not items:
+            await safe_edit_text(query, "⚠️ **لا توجد ملفات في هذا القسم لنقلها.**", InlineKeyboardMarkup([[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]))
+            return
+
+        keyboard = []
+        text = "📦 **اختر المحتوى المراد نقل الأرشيف العام:**\n\n"
+        for idx, (item_id, info) in enumerate(items.items(), start=1):
+            text += f"📌 **{idx}. {info['title']}**\n"
+            keyboard.append([InlineKeyboardButton(f"📦 نقل رقم ({idx})", callback_data=f"admdomove:{cat_key}:{item_id}")])
+
+        keyboard.append([InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")])
+        await safe_edit_text(query, text, InlineKeyboardMarkup(keyboard))
+
+    elif data.startswith("admdomove:"):
+        parts = data.split(":", 2)
+        if len(parts) == 3:
+            _, cat_key, item_id = parts
+            item = db.get(cat_key, {}).get(item_id)
+            if item:
+                # نقل العنصر إلى قائمة general_archive ثم حذفه من القسم الأصلي
+                if "general_archive" not in db:
+                    db["general_archive"] = {}
+                db["general_archive"][item_id] = item
+                del db[cat_key][item_id]
+                
+                save_data_instant(db)
+                asyncio.create_task(delayed_github_sync())
+                
+                await safe_edit_text(
+                    query, 
+                    f"✅ **تم نقل المحتوى بنجاح إلى (الأرشيف العام)!**\n📌 **العنوان:** `{item['title']}`", 
+                    InlineKeyboardMarkup([[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]])
+                )
+                return
+        await safe_edit_text(query, "❌ لم يتم العثور على الملف لنقله.", InlineKeyboardMarkup([[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]))
 
 async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -506,6 +559,8 @@ def main():
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^adm_"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdelcat_"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdodell:"))
+    app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admmovecat_"))
+    app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdomove:"))
     app.add_handler(CallbackQueryHandler(button_handler))
 
     print("✅ HR Bot يعمل بأحدث تنسيق ومحمي بالكامل!")
