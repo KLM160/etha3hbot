@@ -1,6 +1,7 @@
 python-telegram-bot>=21.0
 requests
-fpdf2
+reportlab
+arabic-reshaper
+python-bidi
 qrcode
 Pillow
-
