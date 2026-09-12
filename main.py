@@ -131,6 +131,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     keyboard = [
         [InlineKeyboardButton("📁 الأرشيف الإذاعي", callback_data="archive_menu")],
+        [InlineKeyboardButton("🗄️ الأرشيف العام (المحتوى المكتمل)", callback_data="cat_general_archive")],
         [InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -165,7 +166,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📺 قسم المقاطع المرئية", callback_data="cat_videos")],
             [InlineKeyboardButton("🎧 قسم الحوارات الإذاعية", callback_data="cat_dialogues")],
             [InlineKeyboardButton("🎁 قسم الأسئلة الإذاعية", callback_data="cat_quizzes")],
-            [InlineKeyboardButton("🗄️ الأرشيف العام (المحتوى المكتمل)", callback_data="cat_general_archive")],
             [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
         ]
         text = "📁 **الأرشيف الإذاعي**\n━━━━━━━ • 📑 • ━━━━━━━\n\nاختر القسم المطلوب للوصول إلى الملفات:"
@@ -188,12 +188,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not items:
             text += "⚠️ **لا توجد ملفات مضافة حالياً.**"
         else:
-            text += "👇 **قائمة المحتوى المتاح (اضغط على الزر المخصص للتنزيل):**\n\n"
+            text += "👇 **قائمة المحتوى المتاح:**\n\n"
+            total_items = len(items)
             for idx, (item_id, info) in enumerate(items.items(), start=1):
                 text += f"📌 **{idx}. {info['title']}**\n"
                 keyboard.append([InlineKeyboardButton(f"📥 استعراض المحتوى رقم ({idx})", callback_data=f"dl:{cat_key}:{item_id}")])
+                
+                # إضافة فاصلة بين محتوى وآخر إذا لم يكن الأخير
+                if idx < total_items:
+                    text += "━━━━━━━ • 📌 • ━━━━━━━\n"
 
-        keyboard.append([InlineKeyboardButton("🔙 رجوع للأرشيف", callback_data="archive_menu"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")])
+        back_btn = [InlineKeyboardButton("🔙 رجوع للأرشيف", callback_data="archive_menu")] if cat_key != "general_archive" else []
+        keyboard.append(back_btn + [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")])
         await safe_edit_text(query, text, InlineKeyboardMarkup(keyboard))
 
     elif data.startswith("dl:"):
@@ -229,7 +235,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         await asyncio.sleep(0.3)
 
                 await safe_delete_msg(context, chat_id, query.message.message_id)
-                nav_kb = [[InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{cat_key}"), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]]
+                back_target = "cat_general_archive" if cat_key == "general_archive" else f"cat_{cat_key}"
+                nav_kb = [[InlineKeyboardButton("🔙 رجوع للقسم", callback_data=back_target), InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]]
 
                 final_caption = f"✨ **تم إرسال المحتوى الموصل بنجاح:**\n📌 **{item['title']}**\n━━━━━━━ • 🏁 • ━━━━━━━"
                 await context.bot.send_message(chat_id=chat_id, text=final_caption, reply_markup=InlineKeyboardMarkup(nav_kb), parse_mode="Markdown")
@@ -491,7 +498,6 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _, cat_key, item_id = parts
             item = db.get(cat_key, {}).get(item_id)
             if item:
-                # نقل العنصر إلى قائمة general_archive ثم حذفه من القسم الأصلي
                 if "general_archive" not in db:
                     db["general_archive"] = {}
                 db["general_archive"][item_id] = item
