@@ -3,5 +3,3 @@ requests
 fpdf2
 qrcode
 Pillow
-arabic-reshaper
-python-bidi
