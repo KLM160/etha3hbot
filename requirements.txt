@@ -5,3 +5,4 @@ arabic-reshaper
 python-bidi
 qrcode
 Pillow
+
