@@ -3,3 +3,4 @@ requests
 fpdf2
 qrcode
 Pillow
+
