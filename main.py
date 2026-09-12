@@ -18,10 +18,8 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# مكتبات معالجة وتنسيق العربية للـ PDF
+# مكتبة إنشاء ملفات PDF
 from fpdf import FPDF
-import arabic_reshaper
-from bidi.algorithm import get_display
 
 # إعداد السجل
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -123,54 +121,46 @@ async def safe_edit_text(query, text, reply_markup=None):
         pass
 
 # ------------------------------------------
-# 🛠️ دالة إصلاح وتحويل النص العربي لـ RTL
-# ------------------------------------------
-def ar(text):
-    if not text:
-        return ""
-    reshaped_text = arabic_reshaper.reshape(text)
-    return get_display(reshaped_text)
-
-# ------------------------------------------
-# 📄 دالة إنشاء ملف الـ PDF الآمنة
+# 📄 دالة إنشاء ملفات PDF المضبوطة بالكامل
 # ------------------------------------------
 def generate_pdf_document(doc_title, main_text, items_list, outro_text=None, doc_type="intro"):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
-    # تنزيل خط عربي داعم مؤقتاً في الذاكرة
-    font_url = "https://github.com/google/fonts/raw/main/ofl/amiri/Amiri-Regular.ttf"
+
+    # تنزيل خط Amiri العربي لتفادي لخبطة الكلمات والأسطر
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
+        font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Regular.ttf"
         res = requests.get(font_url)
         with open(font_path, "wb") as f:
             f.write(res.content)
 
-    pdf.add_font("Amiri", "", font_path, uni=True)
+    pdf.add_font("Amiri", "", font_path)
     pdf.set_font("Amiri", size=14)
 
     # العنوان الرئيسي
-    pdf.cell(0, 10, ar(doc_title), ln=True, align="C")
+    pdf.cell(0, 10, doc_title, new_x="LMARGIN", new_y="NEXT", align="C")
     pdf.ln(5)
 
     # المقدمة العامة
     if main_text:
-        pdf.multi_cell(0, 8, ar(f"📌 المقدمة العامة:\n{main_text}"), align="R")
+        pdf.set_font("Amiri", size=14)
+        pdf.multi_cell(0, 8, f"📌 المقدمة العامة:\n{main_text}", align="R")
         pdf.ln(5)
 
     # الفقرات
     for idx, item in enumerate(items_list, start=1):
         if doc_type == "intro":
-            pdf.multi_cell(0, 8, ar(f"✨ مقدمة الفقرة ({idx}):\n{item}"), align="R")
+            pdf.multi_cell(0, 8, f"✨ مقدمة الفقرة رقم ({idx}):\n{item}", align="R")
         else:
-            pdf.multi_cell(0, 8, ar(f"🔹 {item['title']}:\n{item['content']}"), align="R")
+            pdf.multi_cell(0, 8, f"🔹 {item['title']}:\n{item['content']}", align="R")
         pdf.ln(4)
 
     # الخاتمة
     if outro_text:
         pdf.ln(3)
-        pdf.multi_cell(0, 8, ar(f"🏁 الخاتمة:\n{outro_text}"), align="R")
+        pdf.multi_cell(0, 8, f"🏁 الخاتمة:\n{outro_text}", align="R")
 
     filename = f"Radio_{doc_type}_{int(asyncio.get_event_loop().time())}.pdf"
     pdf.output(filename)
@@ -249,7 +239,7 @@ async def receive_intro_outro(update: Update, context: ContextTypes.DEFAULT_TYPE
     main_text = context.user_data.get("intro_main_text")
     paras = context.user_data.get("intro_paras", [])
 
-    status_msg = await update.message.reply_text("⏳ **جاري تنسيق المحتوى وتجهيزه...**")
+    await update.message.reply_text("⏳ **جاري تنسيق المحتوى وإنشاء ملف PDF المنسق...**")
 
     try:
         filename = generate_pdf_document("إذاعة مدرسية - مقدمات منسقة", main_text, paras, outro_text, doc_type="intro")
@@ -262,12 +252,10 @@ async def receive_intro_outro(update: Update, context: ContextTypes.DEFAULT_TYPE
             os.remove(filename)
     except Exception as e:
         logging.error(f"PDF Gen Error: {e}")
-        # خطة بديلة: إرسال المحتوى المنسق كنص نقي في الشات مباشرة
         formatted_txt = f"🎙️ **المقدمة العامة:**\n{main_text}\n\n"
         for idx, p in enumerate(paras, 1):
             formatted_txt += f"✨ **مقدمة الفقرة ({idx}):**\n{p}\n\n"
         formatted_txt += f"🏁 **الخاتمة:**\n{outro_text}"
-        
         await update.message.reply_text(f"✨ **إليك النص المنسق والمجهز للإذاعة:**\n\n{formatted_txt}", parse_mode="Markdown")
 
     context.user_data.clear()
@@ -328,7 +316,7 @@ async def para_done_all_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await safe_edit_text(query, "❌ لم تقم بإضافة أي فقرة بعد!")
         return ConversationHandler.END
 
-    await safe_edit_text(query, "⏳ **جاري تنسيق المحتوى وتجهيزه...**")
+    await safe_edit_text(query, "⏳ **جاري تنسيق المحتوى وإنشاء ملف PDF المنسق...**")
 
     try:
         filename = generate_pdf_document("فقرات إذاعية منسقة", None, items, None, doc_type="paragraphs")
