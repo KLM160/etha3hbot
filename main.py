@@ -18,14 +18,10 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# مكتبات معالجة وتنسيق الـ PDF العربي بدقة 100%
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-import arabic_reshaper
-from bidi.algorithm import get_display
+# مكتبة إنشاء وتنسيق ملفات الوورد
+import docx
+from docx.shared import Pt, Inches, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 # إعداد السجل
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -127,87 +123,68 @@ async def safe_edit_text(query, text, reply_markup=None):
         pass
 
 # ------------------------------------------
-# 🛠️ دالة إعادة تشكيل وترتيب النص العربي (RTL)
+# 📄 دالة إنشاء ملفات الوورد المنسقة والآنية
 # ------------------------------------------
-def fix_arabic(text):
-    if not text:
-        return ""
-    reshaped = arabic_reshaper.reshape(text)
-    return get_display(reshaped)
+def generate_word_document(doc_title, main_text, items_list, outro_text=None, doc_type="intro"):
+    doc = docx.Document()
 
-# ------------------------------------------
-# 📄 دالة إنشاء ملفات PDF منسقة ومضبوطة
-# ------------------------------------------
-def generate_pdf_document(doc_title, main_text, items_list, outro_text=None, doc_type="intro"):
-    filename = f"Radio_{doc_type}_{int(asyncio.get_event_loop().time())}.pdf"
+    # ضبط الهوامش
+    for section in doc.sections:
+        section.top_margin = Inches(0.8)
+        section.bottom_margin = Inches(0.8)
+        section.left_margin = Inches(0.8)
+        section.right_margin = Inches(0.8)
 
-    # تنزيل خط Amiri العربي للتعامل مع النصوص العربية
-    font_path = "Amiri-Regular.ttf"
-    if not os.path.exists(font_path):
-        font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Regular.ttf"
-        res = requests.get(font_url)
-        with open(font_path, "wb") as f:
-            f.write(res.content)
+    # العنوان الرئيسي
+    title_p = doc.add_paragraph()
+    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run_title = title_p.add_run(doc_title)
+    run_title.font.size = Pt(20)
+    run_title.font.bold = True
+    run_title.font.color.rgb = RGBColor(0, 51, 102)
 
-    pdfmetrics.registerFont(TTFont('Amiri', font_path))
+    doc.add_paragraph("━━━━━━━ • 🎙️ • ━━━━━━━").alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    doc = SimpleDocTemplate(
-        filename,
-        pagesize=A4,
-        rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40
-    )
-
-    styles = getSampleStyleSheet()
-
-    # نمط العنوان الرئيسي
-    title_style = ParagraphStyle(
-        'ArabicTitle',
-        parent=styles['Normal'],
-        fontName='Amiri',
-        fontSize=18,
-        leading=22,
-        alignment=1, # منتصف
-        textColor='#003366'
-    )
-
-    # نمط المحتوى والفقرات (RTL محاذاة لليمين)
-    body_style = ParagraphStyle(
-        'ArabicBody',
-        parent=styles['Normal'],
-        fontName='Amiri',
-        fontSize=13,
-        leading=20,
-        alignment=2 # يمين
-    )
-
-    story = []
-
-    # العنوان
-    story.append(Paragraph(fix_arabic(doc_title), title_style))
-    story.append(Spacer(1, 15))
-
-    # المقدمة العامة
+    # المقدمة
     if main_text:
-        txt = f"📌 <b>المقدمة العامة:</b><br/>{main_text}"
-        story.append(Paragraph(fix_arabic(txt), body_style))
-        story.append(Spacer(1, 12))
+        p_main = doc.add_paragraph()
+        p_main.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r_main = p_main.add_run(f"📌 المقدمة العامة:\n{main_text}\n")
+        r_main.font.size = Pt(14)
+        r_main.font.bold = True
 
     # الفقرات
     for idx, item in enumerate(items_list, start=1):
+        p_item = doc.add_paragraph()
+        p_item.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         if doc_type == "intro":
-            txt = f"✨ <b>مقدمة الفقرة رقم ({idx}):</b><br/>{item}"
+            r_head = p_item.add_run(f"✨ مقدمة الفقرة رقم ({idx}):\n")
+            r_head.font.bold = True
+            r_head.font.size = Pt(15)
+            r_head.font.color.rgb = RGBColor(180, 100, 0)
+            
+            r_body = p_item.add_run(f"{item}\n")
+            r_body.font.size = Pt(13)
         else:
-            txt = f"🔹 <b>{item['title']}:</b><br/>{item['content']}"
-        story.append(Paragraph(fix_arabic(txt), body_style))
-        story.append(Spacer(1, 10))
+            r_head = p_item.add_run(f"🔹 {item['title']}:\n")
+            r_head.font.bold = True
+            r_head.font.size = Pt(15)
+            r_head.font.color.rgb = RGBColor(0, 102, 51)
+
+            r_body = p_item.add_run(f"{item['content']}\n")
+            r_body.font.size = Pt(13)
 
     # الخاتمة
     if outro_text:
-        story.append(Spacer(1, 10))
-        txt = f"🏁 <b>الخاتمة:</b><br/>{outro_text}"
-        story.append(Paragraph(fix_arabic(txt), body_style))
+        p_outro = doc.add_paragraph()
+        p_outro.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r_outro = p_outro.add_run(f"\n🏁 الخاتمة:\n{outro_text}")
+        r_outro.font.size = Pt(14)
+        r_outro.font.bold = True
+        r_outro.font.color.rgb = RGBColor(100, 100, 100)
 
-    doc.build(story)
+    filename = f"Formatted_{doc_type}_{int(asyncio.get_event_loop().time())}.docx"
+    doc.save(filename)
     return filename
 
 # ------------------------------------------
@@ -217,7 +194,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     keyboard = [
         [InlineKeyboardButton("📁 الأرشيف الإذاعي", callback_data="archive_menu")],
-        [InlineKeyboardButton("🎙️ تنسيق إذاعة", callback_data="formatting_menu")],
+        [InlineKeyboardButton("🎙️ تنسيق إذاعة (Word)", callback_data="formatting_menu")],
         [InlineKeyboardButton("🗄️ الأرشيف العام (المحتوى المكتمل)", callback_data="cat_general_archive")],
         [InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info")]
     ]
@@ -283,24 +260,17 @@ async def receive_intro_outro(update: Update, context: ContextTypes.DEFAULT_TYPE
     main_text = context.user_data.get("intro_main_text")
     paras = context.user_data.get("intro_paras", [])
 
-    await update.message.reply_text("⏳ **جاري تنسيق المحتوى وإنشاء ملف PDF المنسق...**")
+    await update.message.reply_text("⏳ **جاري تنسيق وإنشاء ملف الوورد المنسق...**")
 
-    try:
-        filename = generate_pdf_document("إذاعة مدرسية - مقدمات منسقة", main_text, paras, outro_text, doc_type="intro")
-        await update.message.reply_document(
-            document=open(filename, "rb"),
-            filename="مقدمة_إذاعية_منسقة.pdf",
-            caption="🎉 **تم تنسيق المقدمة وتجهيز ملف PDF بنجاح!**"
-        )
-        if os.path.exists(filename):
-            os.remove(filename)
-    except Exception as e:
-        logging.error(f"PDF Gen Error: {e}")
-        formatted_txt = f"🎙️ **المقدمة العامة:**\n{main_text}\n\n"
-        for idx, p in enumerate(paras, 1):
-            formatted_txt += f"✨ **مقدمة الفقرة ({idx}):**\n{p}\n\n"
-        formatted_txt += f"🏁 **الخاتمة:**\n{outro_text}"
-        await update.message.reply_text(f"✨ **إليك النص المنسق والمجهز للإذاعة:**\n\n{formatted_txt}", parse_mode="Markdown")
+    filename = generate_word_document("إذاعة مدرسية - مقدمات منسقة", main_text, paras, outro_text, doc_type="intro")
+
+    await update.message.reply_document(
+        document=open(filename, "rb"),
+        filename="مقدمة_إذاعية_منسقة.docx",
+        caption="🎉 **تم تنسيق المقدمة وتجهيز ملف الوورد بنجاح!**"
+    )
+    if os.path.exists(filename):
+        os.remove(filename)
 
     context.user_data.clear()
     return ConversationHandler.END
@@ -360,25 +330,19 @@ async def para_done_all_handler(update: Update, context: ContextTypes.DEFAULT_TY
         await safe_edit_text(query, "❌ لم تقم بإضافة أي فقرة بعد!")
         return ConversationHandler.END
 
-    await safe_edit_text(query, "⏳ **جاري تنسيق المحتوى وإنشاء ملف PDF المنسق...**")
+    await safe_edit_text(query, "⏳ **جاري تنسيق وإنشاء ملف الوورد المنسق...**")
 
-    try:
-        filename = generate_pdf_document("فقرات إذاعية منسقة", None, items, None, doc_type="paragraphs")
-        chat_id = query.message.chat_id
-        await context.bot.send_document(
-            chat_id=chat_id,
-            document=open(filename, "rb"),
-            filename="فقرات_إذاعية_منسقة.pdf",
-            caption="🎉 **تم تنسيق الفقرات وتجهيز ملف PDF بنجاح!**"
-        )
-        if os.path.exists(filename):
-            os.remove(filename)
-    except Exception as e:
-        logging.error(f"PDF Gen Error: {e}")
-        formatted_txt = "📖 **الفقرات الإذاعية المنسقة:**\n\n"
-        for item in items:
-            formatted_txt += f"🔹 **{item['title']}:**\n{item['content']}\n\n"
-        await context.bot.send_message(chat_id=query.message.chat_id, text=formatted_txt, parse_mode="Markdown")
+    filename = generate_word_document("فقرات إذاعية منسقة", None, items, None, doc_type="paragraphs")
+
+    chat_id = query.message.chat_id
+    await context.bot.send_document(
+        chat_id=chat_id,
+        document=open(filename, "rb"),
+        filename="فقرات_إذاعية_منسقة.docx",
+        caption="🎉 **تم تنسيق الفقرات وتجهيز ملف الوورد بنجاح!**"
+    )
+    if os.path.exists(filename):
+        os.remove(filename)
 
     context.user_data.clear()
     return ConversationHandler.END
@@ -406,7 +370,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("📖 تنسيق فقرات إذاعية", callback_data="start_para_formatter")],
             [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
         ]
-        text = "🎙️ **قسم تنسيق الإذاعة**\n━━━━━━━ • 📑 • ━━━━━━━\n\nاختر نوع التنسيق المطلوب لبدء التنسيق:"
+        text = "🎙️ **قسم تنسيق الإذاعة**\n━━━━━━━ • 📑 • ━━━━━━━\n\nاختر نوع التنسيق المطلوب لبدء إنشاء الملف:"
         await safe_edit_text(query, text, InlineKeyboardMarkup(keyboard))
 
     elif data == "archive_menu":
