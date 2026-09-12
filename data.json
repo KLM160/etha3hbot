@@ -2,18 +2,7 @@
     "broadcasts": {},
     "videos": {},
     "dialogues": {},
-    "quizzes": {
-        "item_1788634029": {
-            "title": "سؤال الأسبوع الثالث",
-            "files": [
-                {
-                    "file_id": "BQACAgQAAxkBAAICF2qcY5RaW5U36IWG44hvhxIPNMibAAK-IgACPczhUE28teCsFW5JPQQ",
-                    "type": "document",
-                    "text": null
-                }
-            ]
-        }
-    },
+    "quizzes": {},
     "general_archive": {
         "item_1788610686": {
             "title": "( وما أوتيتم من العلم إلا قليلا )\nإذاعة يوم الثلاثاء , الأسبوع الثالث",
@@ -55,6 +44,16 @@
             "files": [
                 {
                     "file_id": "BQACAgQAAxkBAAICAWqcYBgE4Bao1285YGAMQsEfYD-OAAK4IgACPczhUGsV6BijTX9GPQQ",
+                    "type": "document",
+                    "text": null
+                }
+            ]
+        },
+        "item_1788634029": {
+            "title": "سؤال الأسبوع الثالث",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAICF2qcY5RaW5U36IWG44hvhxIPNMibAAK-IgACPczhUE28teCsFW5JPQQ",
                     "type": "document",
                     "text": null
                 }
