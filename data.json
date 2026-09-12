@@ -1,18 +1,7 @@
 {
     "broadcasts": {},
     "videos": {},
-    "dialogues": {
-        "item_1788633277": {
-            "title": "على عتبات الغد \nحوار يوم الأربعاء, الأسبوع الثالث",
-            "files": [
-                {
-                    "file_id": "BQACAgQAAxkBAAICAWqcYBgE4Bao1285YGAMQsEfYD-OAAK4IgACPczhUGsV6BijTX9GPQQ",
-                    "type": "document",
-                    "text": null
-                }
-            ]
-        }
-    },
+    "dialogues": {},
     "quizzes": {
         "item_1788634029": {
             "title": "سؤال الأسبوع الثالث",
@@ -57,6 +46,16 @@
                 {
                     "file_id": "BAACAgQAAxkBAAICMGqc0SVrFzX0nmFYIcDxe6pcf1d7AAI1HQACPczpUOk-pHnspYxfPQQ",
                     "type": "video",
+                    "text": null
+                }
+            ]
+        },
+        "item_1788633277": {
+            "title": "على عتبات الغد \nحوار يوم الأربعاء, الأسبوع الثالث",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAICAWqcYBgE4Bao1285YGAMQsEfYD-OAAK4IgACPczhUGsV6BijTX9GPQQ",
+                    "type": "document",
                     "text": null
                 }
             ]
