@@ -1,5 +1,16 @@
 {
-    "broadcasts": {},
+    "broadcasts": {
+        "item_1789213417": {
+            "title": "تصميم يوم ال",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAIC4mqlOtjCEbC1azveclQOb6_aHb8cAALsHQACzWYoUY2kR2jgz2OXPQQ",
+                    "type": "document",
+                    "text": null
+                }
+            ]
+        }
+    },
     "videos": {},
     "dialogues": {},
     "quizzes": {},
