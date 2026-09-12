@@ -17,7 +17,6 @@ from telegram.ext import (
     filters,
 )
 
-# مكتبة إنشاء وتنسيق ملفات الوورد
 import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement
@@ -25,7 +24,6 @@ from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
 import requests
 
-# إعداد السجل
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -45,18 +43,15 @@ MAX_BATCH_FILES = 10
 ADMIN_PASSCODE, ADMIN_SELECT_CAT, ADMIN_WAITING_FILES, ADMIN_WAITING_TITLE = (
     range(4)
 )
-INTRO_MAIN, INTRO_PARAS, INTRO_OUTRO = range(4, 7)
-PARA_TITLE, PARA_CONTENT = range(7, 9)
+INTRO_TITLE, INTRO_MAIN, INTRO_PARAS, INTRO_OUTRO = range(4, 8)
+PARA_DOC_TITLE, PARA_TITLE, PARA_CONTENT = range(8, 11)
 
 ABOUT_TEXT = (
     "🎙️ **عن أرشيف إذاعة ابن حميد | HR Bot**\n"
     "━━━━━━━ • 📻 • ━━━━━━━\n\n"
-    "منصة رقمية مخصصة لتوثيق وأرشفة المحتوى الإذاعي والأنشطة الطلابية، "
-    "تهدف إلى تسهيل الوصول للإذاعات المدرسية، المقاطع المرئية، الحوارات، "
-    "والأسئلة الثقافية وبنائها وفق أحدث معايير التنظيم الرقمي.\n\n"
-    "👨‍🏫 **الإشراف العام:** أ. أبو باسل (رائد النشاط الطلابي)\n"
-    "💻 **التطوير والبرمجة:** AboZaid\n\n"
-    "✨ *هذا العمل خدمة للنشاط الطلابي والمجتمع المدرسي.*"
+    "منصة رقمية لتوثيق وأرشفة المحتوى الإذاعي وتسهيل الوصول للأنشطة المدرسية.\n\n"
+    "👨‍🏫 **الإشراف العام:** رائد النشاط أ.فهد\n"
+    "💻 **التطوير والبرمجة:** AboZaid"
 )
 
 DEFAULT_DATA = {
@@ -155,9 +150,6 @@ async def safe_edit_text(query, text, reply_markup=None):
     pass
 
 
-# ------------------------------------------
-# 🛠️ دالة إجبار اتجاه الفقرة والرموز من اليمين لليسار (RTL)
-# ------------------------------------------
 def set_paragraph_rtl(paragraph):
   pPr = paragraph._p.get_or_add_pPr()
   bidi = OxmlElement("w:bidi")
@@ -166,14 +158,38 @@ def set_paragraph_rtl(paragraph):
 
 
 # ------------------------------------------
-# 📄 دالة إنشاء ملفات الوورد المنسقة والمحاذية لليمين
+# 📄 دالة الوورد (بدون إيموجيات نهائياً ورسمية للطباعة)
 # ------------------------------------------
 def generate_word_document(
     doc_title, main_text, items_list, outro_text=None, doc_type="intro"
 ):
   doc = docx.Document()
 
-  # ضبط الهوامش
+  # حساب حجم الخط والمسافات للتكيف مع صفحة واحدة
+  total_words = len(main_text.split()) if main_text else 0
+  if outro_text:
+    total_words += len(outro_text.split())
+  for item in items_list:
+    if isinstance(item, dict):
+      total_words += len(item.get("title", "").split()) + len(
+          item.get("content", "").split()
+      )
+    else:
+      total_words += len(str(item).split())
+
+  if total_words < 120:
+    font_size_body = 16
+    font_size_head = 18
+    space_after = 18
+  elif total_words < 220:
+    font_size_body = 14
+    font_size_head = 16
+    space_after = 12
+  else:
+    font_size_body = 12
+    font_size_head = 14
+    space_after = 8
+
   for section in doc.sections:
     section.top_margin = Inches(0.8)
     section.bottom_margin = Inches(0.8)
@@ -184,58 +200,48 @@ def generate_word_document(
   title_p = doc.add_paragraph()
   set_paragraph_rtl(title_p)
   title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+  title_p.paragraph_format.space_after = Pt(16)
   run_title = title_p.add_run(doc_title)
-  run_title.font.size = Pt(20)
+  run_title.font.size = Pt(22)
   run_title.font.bold = True
   run_title.font.color.rgb = RGBColor(0, 51, 102)
 
-  # فاصل
-  sep_p = doc.add_paragraph()
-  set_paragraph_rtl(sep_p)
-  sep_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-  run_sep = sep_p.add_run("━━━━━━━ • 🎙️ • ━━━━━━━")
-  run_sep.font.size = Pt(12)
-
-  # المقدمة
+  # المقدمة العامة
   if main_text:
     p_main = doc.add_paragraph()
     set_paragraph_rtl(p_main)
     p_main.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    r_main = p_main.add_run(f"📌 المقدمة العامة:\n{main_text}\n")
-    r_main.font.size = Pt(14)
-    r_main.font.bold = True
+    p_main.paragraph_format.space_after = Pt(space_after)
+    r_main = p_main.add_run(main_text)
+    r_main.font.size = Pt(font_size_body)
 
-  # الفقرات
-  for idx, item in enumerate(items_list, start=1):
+  # الفقرات بدون إيموجيات أو نصوص مضافة
+  for item in items_list:
     p_item = doc.add_paragraph()
     set_paragraph_rtl(p_item)
     p_item.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    if doc_type == "intro":
-      r_head = p_item.add_run(f"✨ مقدمة الفقرة رقم ({idx}):\n")
-      r_head.font.bold = True
-      r_head.font.size = Pt(15)
-      r_head.font.color.rgb = RGBColor(180, 100, 0)
+    p_item.paragraph_format.space_after = Pt(space_after)
 
-      r_body = p_item.add_run(f"{item}\n")
-      r_body.font.size = Pt(13)
+    if doc_type == "intro":
+      r_body = p_item.add_run(str(item))
+      r_body.font.size = Pt(font_size_body)
     else:
-      r_head = p_item.add_run(f"🔹 {item['title']}:\n")
+      r_head = p_item.add_run(f"{item['title']}\n")
       r_head.font.bold = True
-      r_head.font.size = Pt(15)
+      r_head.font.size = Pt(font_size_head)
       r_head.font.color.rgb = RGBColor(0, 102, 51)
 
-      r_body = p_item.add_run(f"{item['content']}\n")
-      r_body.font.size = Pt(13)
+      r_body = p_item.add_run(item["content"])
+      r_body.font.size = Pt(font_size_body)
 
   # الخاتمة
   if outro_text:
     p_outro = doc.add_paragraph()
     set_paragraph_rtl(p_outro)
     p_outro.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    r_outro = p_outro.add_run(f"\n🏁 الخاتمة:\n{outro_text}")
-    r_outro.font.size = Pt(14)
-    r_outro.font.bold = True
-    r_outro.font.color.rgb = RGBColor(100, 100, 100)
+    p_outro.paragraph_format.space_before = Pt(space_after)
+    r_outro = p_outro.add_run(outro_text)
+    r_outro.font.size = Pt(font_size_body)
 
   filename = f"Formatted_{doc_type}_{int(asyncio.get_event_loop().time())}.docx"
   doc.save(filename)
@@ -243,7 +249,7 @@ def generate_word_document(
 
 
 # ------------------------------------------
-# 🏠 الشاشة الرئيسية
+# 🏠 الشاشة الرئيسية (تنسيق أنيق للجوال مع إيموجيات)
 # ------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
   context.user_data.clear()
@@ -251,13 +257,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
       [InlineKeyboardButton("📁 الأرشيف الإذاعي", callback_data="archive_menu")],
       [
           InlineKeyboardButton(
-              "🎙️ تنسيق إذاعة (Word)", callback_data="formatting_menu"
+              "🗄️ الأرشيف العام (المحتوى المكتمل)",
+              callback_data="cat_general_archive",
           )
       ],
       [
           InlineKeyboardButton(
-              "🗄️ الأرشيف العام (المحتوى المكتمل)",
-              callback_data="cat_general_archive",
+              "🎙️ تنسيق إذاعة (Word)", callback_data="formatting_menu"
           )
       ],
       [InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info")],
@@ -267,7 +273,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
       "✨ **أرشيف إذاعة ابن حميد | HR Bot**\n"
       "━━━━━━━ • 📻 • ━━━━━━━\n\n"
       "مرحباً بك في المنصة الرقمية الموحدة لإدارة وتوثيق المحتوى الإذاعي.\n\n"
-      "اختر أحد الخيارات التالية للاستعراض أو تنسيق ملفاتك:"
+      "اختر أحد الخيارات أدناه:"
   )
   if update.callback_query:
     await safe_edit_text(update.callback_query, text, reply_markup)
@@ -278,7 +284,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ------------------------------------------
-# 📝 محادثة تنسيق المقدمات والفقرات
+# 📝 محادثة تنسيق المقدمة
 # ------------------------------------------
 async def start_intro_formatter(
     update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -290,8 +296,21 @@ async def start_intro_formatter(
   keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
   await safe_edit_text(
       query,
-      "📝 **تنسيق المقدمة الإذاعية:**\n\nأرسل **المقدمة العامة** للإذاعة الآن:",
+      "📝 **تنسيق المقدمة الإذاعية:**\n\nأرسل **عنوان الإذاعة** الآن:",
       InlineKeyboardMarkup(keyboard),
+  )
+  return INTRO_TITLE
+
+
+async def receive_intro_title(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+  context.user_data["intro_doc_title"] = update.message.text.strip()
+
+  keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
+  await update.message.reply_text(
+      "✅ تم حفظ العنوان.\n\nأرسل **المقدمة العامة** الآن:",
+      reply_markup=InlineKeyboardMarkup(keyboard),
   )
   return INTRO_MAIN
 
@@ -303,7 +322,7 @@ async def receive_intro_main(
 
   keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
   await update.message.reply_text(
-      "✅ تم حفظ المقدمة العامة.\n\nأرسل الآن **مقدمة الفقرة الأولى**:",
+      "✅ تم حفظ المقدمة العامة.\n\nأرسل **مقدمة الفقرة الأولى**:",
       reply_markup=InlineKeyboardMarkup(keyboard),
   )
   return INTRO_PARAS
@@ -326,7 +345,7 @@ async def receive_intro_paras(
       [InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")],
   ]
   await update.message.reply_text(
-      f"✅ تم حفظ مقدمة الفقرة رقم ({len(paras)}).\n\nأرسل **مقدمة الفقرة رقم"
+      f"✅ تم حفظ الفقرة رقم ({len(paras)}).\n\nأرسل **مقدمة الفقرة رقم"
       f" ({len(paras)+1})** أو اضغط الزر للتجاوز:",
       reply_markup=InlineKeyboardMarkup(keyboard),
   )
@@ -352,25 +371,22 @@ async def receive_intro_outro(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
   outro_text = update.message.text.strip()
+  doc_title = context.user_data.get("intro_doc_title", "إذاعة مدرسية")
   main_text = context.user_data.get("intro_main_text")
   paras = context.user_data.get("intro_paras", [])
 
   await update.message.reply_text(
-      "⏳ **جاري تنسيق وإنشاء ملف الوورد المنسق...**"
+      "⏳ **جاري جاري إنشاء ملف الوورد المنسق...**"
   )
 
   filename = generate_word_document(
-      "إذاعة مدرسية - مقدمات منسقة",
-      main_text,
-      paras,
-      outro_text,
-      doc_type="intro",
+      doc_title, main_text, paras, outro_text, doc_type="intro"
   )
 
   await update.message.reply_document(
       document=open(filename, "rb"),
-      filename="مقدمة_إذاعية_منسقة.docx",
-      caption="🎉 **تم تنسيق المقدمة وتجهيز ملف الوورد بنجاح!**",
+      filename=f"{doc_title}.docx",
+      caption="🎉 **تم إنشاء ملف الوورد المنسق بنجاح!**",
   )
   if os.path.exists(filename):
     os.remove(filename)
@@ -379,6 +395,9 @@ async def receive_intro_outro(
   return ConversationHandler.END
 
 
+# ------------------------------------------
+# 📖 محادثة تنسيق الفقرات
+# ------------------------------------------
 async def start_para_formatter(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
@@ -389,9 +408,21 @@ async def start_para_formatter(
   keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
   await safe_edit_text(
       query,
-      "📖 **تنسيق الفقرات الإذاعية:**\n\nأرسل **عنوان الفقرة الأولى** (مثال:"
-      " القرآن الكريم، هل تعلم):",
+      "📖 **تنسيق الفقرات الإذاعية:**\n\nأرسل **عنوان المستند/الإذاعة** أولاً:",
       InlineKeyboardMarkup(keyboard),
+  )
+  return PARA_DOC_TITLE
+
+
+async def receive_para_doc_title(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+):
+  context.user_data["para_doc_title"] = update.message.text.strip()
+
+  keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
+  await update.message.reply_text(
+      "أرسل **عنوان الفقرة الأولى** (مثال: القرآن الكريم):",
+      reply_markup=InlineKeyboardMarkup(keyboard),
   )
   return PARA_TITLE
 
@@ -403,8 +434,8 @@ async def receive_para_title(
 
   keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
   await update.message.reply_text(
-      f"📌 **العنوان:** {context.user_data['temp_para_title']}\n\nأرسل الآن **محتوى"
-      " هذه الفقرة**:",
+      f"📌 **العنوان:** {context.user_data['temp_para_title']}\n\nأرسل الآن"
+      " **محتوى الفقرة**:",
       reply_markup=InlineKeyboardMarkup(keyboard),
   )
   return PARA_CONTENT
@@ -435,7 +466,7 @@ async def receive_para_content(
   ]
   await update.message.reply_text(
       f"✅ تم حفظ فقرة ({title}) بنجاح!\nعدد الفقرات الحالية:"
-      f" `{len(items)}`\n\nاختر خطوتك التالية:",
+      f" `{len(items)}`\n\nاختر الخطوة التالية:",
       reply_markup=InlineKeyboardMarkup(keyboard),
       parse_mode="Markdown",
   )
@@ -449,9 +480,7 @@ async def para_add_more_handler(
   await query.answer()
   keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
   await safe_edit_text(
-      query,
-      "أرسل **عنوان الفقرة التالية**:",
-      InlineKeyboardMarkup(keyboard),
+      query, "أرسل **عنوان الفقرة التالية**:", InlineKeyboardMarkup(keyboard)
   )
   return PARA_TITLE
 
@@ -462,25 +491,26 @@ async def para_done_all_handler(
   query = update.callback_query
   await query.answer()
   items = context.user_data.get("para_items", [])
+  doc_title = context.user_data.get("para_doc_title", "فقرات إذاعية")
 
   if not items:
     await safe_edit_text(query, "❌ لم تقم بإضافة أي فقرة بعد!")
     return ConversationHandler.END
 
   await safe_edit_text(
-      query, "⏳ **جاري تنسيق وإنشاء ملف الوورد المنسق...**"
+      query, "⏳ **جاري إنشاء ملف الوورد المنسق...**"
   )
 
   filename = generate_word_document(
-      "فقرات إذاعية منسقة", None, items, None, doc_type="paragraphs"
+      doc_title, None, items, None, doc_type="paragraphs"
   )
 
   chat_id = query.message.chat_id
   await context.bot.send_document(
       chat_id=chat_id,
       document=open(filename, "rb"),
-      filename="فقرات_إذاعية_منسقة.docx",
-      caption="🎉 **تم تنسيق الفقرات وتجهيز ملف الوورد بنجاح!**",
+      filename=f"{doc_title}.docx",
+      caption="🎉 **تم إنشاء ملف الوورد المنسق بنجاح!**",
   )
   if os.path.exists(filename):
     os.remove(filename)
@@ -655,7 +685,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]]
 
         final_caption = (
-            "✨ **تم إرسال المحتوى الموصل بنجاح:**\n📌"
+            "✨ **تم إرسال المحتوى بنجاح:**\n📌"
             f" **{item['title']}**\n━━━━━━━ • 🏁 • ━━━━━━━"
         )
         await context.bot.send_message(
@@ -944,7 +974,7 @@ async def admin_save_file_step(
   await context.bot.send_message(
       chat_id=chat_id,
       text=(
-          "🎉 **تمت إضافة المحتوى وتوفيره فوراً!**\n📌 **العنوان:**"
+          "🎉 **تمت إضافة المحتوى بنجاح!**\n📌 **العنوان:**"
           f" `{title}`\n📦 **عدد العناصر:** `{len(files)}`"
       ),
       reply_markup=InlineKeyboardMarkup([[
@@ -1057,7 +1087,7 @@ async def admin_del_handler(
         asyncio.create_task(delayed_github_sync())
         await safe_edit_text(
             query,
-            "✅ **تم حذف الملف وحفظ التغييرات فوراً!**",
+            "✅ **تم حذف الملف وحفظ التغييرات!**",
             InlineKeyboardMarkup([[
                 InlineKeyboardButton(
                     "« العودة للوحة الإدارة", callback_data="adm_main"
@@ -1187,9 +1217,6 @@ async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
   return ConversationHandler.END
 
 
-# ------------------------------------------
-# 🚀 تشغيل البوت
-# ------------------------------------------
 def main():
   threading.Thread(target=run_dummy_server, daemon=True).start()
 
@@ -1261,6 +1288,11 @@ def main():
           )
       ],
       states={
+          INTRO_TITLE: [
+              MessageHandler(
+                  filters.TEXT & ~filters.COMMAND, receive_intro_title
+              )
+          ],
           INTRO_MAIN: [
               MessageHandler(
                   filters.TEXT & ~filters.COMMAND, receive_intro_main
@@ -1291,6 +1323,11 @@ def main():
           )
       ],
       states={
+          PARA_DOC_TITLE: [
+              MessageHandler(
+                  filters.TEXT & ~filters.COMMAND, receive_para_doc_title
+              )
+          ],
           PARA_TITLE: [
               MessageHandler(
                   filters.TEXT & ~filters.COMMAND, receive_para_title
@@ -1331,7 +1368,7 @@ def main():
   app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdomove:"))
   app.add_handler(CallbackQueryHandler(button_handler))
 
-  print("✅ HR Bot يعمل بأحدث تنسيق ومحمي بالكامل!")
+  print("✅ HR Bot يعمل بكل كفاءة وتنسيق أنيق!")
   app.run_polling()
 
 
