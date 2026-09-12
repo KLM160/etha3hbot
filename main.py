@@ -18,8 +18,14 @@ from telegram.ext import (
     ContextTypes,
 )
 
-# مكتبة إنشاء ملفات PDF
-from fpdf import FPDF
+# مكتبات معالجة وتنسيق الـ PDF العربي بدقة 100%
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 # إعداد السجل
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -121,14 +127,21 @@ async def safe_edit_text(query, text, reply_markup=None):
         pass
 
 # ------------------------------------------
-# 📄 دالة إنشاء ملفات PDF المضبوطة بالكامل
+# 🛠️ دالة إعادة تشكيل وترتيب النص العربي (RTL)
+# ------------------------------------------
+def fix_arabic(text):
+    if not text:
+        return ""
+    reshaped = arabic_reshaper.reshape(text)
+    return get_display(reshaped)
+
+# ------------------------------------------
+# 📄 دالة إنشاء ملفات PDF منسقة ومضبوطة
 # ------------------------------------------
 def generate_pdf_document(doc_title, main_text, items_list, outro_text=None, doc_type="intro"):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    filename = f"Radio_{doc_type}_{int(asyncio.get_event_loop().time())}.pdf"
 
-    # تنزيل خط Amiri العربي لتفادي لخبطة الكلمات والأسطر
+    # تنزيل خط Amiri العربي للتعامل مع النصوص العربية
     font_path = "Amiri-Regular.ttf"
     if not os.path.exists(font_path):
         font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/amiri/Amiri-Regular.ttf"
@@ -136,34 +149,65 @@ def generate_pdf_document(doc_title, main_text, items_list, outro_text=None, doc
         with open(font_path, "wb") as f:
             f.write(res.content)
 
-    pdf.add_font("Amiri", "", font_path)
-    pdf.set_font("Amiri", size=14)
+    pdfmetrics.registerFont(TTFont('Amiri', font_path))
 
-    # العنوان الرئيسي
-    pdf.cell(0, 10, doc_title, new_x="LMARGIN", new_y="NEXT", align="C")
-    pdf.ln(5)
+    doc = SimpleDocTemplate(
+        filename,
+        pagesize=A4,
+        rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40
+    )
+
+    styles = getSampleStyleSheet()
+
+    # نمط العنوان الرئيسي
+    title_style = ParagraphStyle(
+        'ArabicTitle',
+        parent=styles['Normal'],
+        fontName='Amiri',
+        fontSize=18,
+        leading=22,
+        alignment=1, # منتصف
+        textColor='#003366'
+    )
+
+    # نمط المحتوى والفقرات (RTL محاذاة لليمين)
+    body_style = ParagraphStyle(
+        'ArabicBody',
+        parent=styles['Normal'],
+        fontName='Amiri',
+        fontSize=13,
+        leading=20,
+        alignment=2 # يمين
+    )
+
+    story = []
+
+    # العنوان
+    story.append(Paragraph(fix_arabic(doc_title), title_style))
+    story.append(Spacer(1, 15))
 
     # المقدمة العامة
     if main_text:
-        pdf.set_font("Amiri", size=14)
-        pdf.multi_cell(0, 8, f"📌 المقدمة العامة:\n{main_text}", align="R")
-        pdf.ln(5)
+        txt = f"📌 <b>المقدمة العامة:</b><br/>{main_text}"
+        story.append(Paragraph(fix_arabic(txt), body_style))
+        story.append(Spacer(1, 12))
 
     # الفقرات
     for idx, item in enumerate(items_list, start=1):
         if doc_type == "intro":
-            pdf.multi_cell(0, 8, f"✨ مقدمة الفقرة رقم ({idx}):\n{item}", align="R")
+            txt = f"✨ <b>مقدمة الفقرة رقم ({idx}):</b><br/>{item}"
         else:
-            pdf.multi_cell(0, 8, f"🔹 {item['title']}:\n{item['content']}", align="R")
-        pdf.ln(4)
+            txt = f"🔹 <b>{item['title']}:</b><br/>{item['content']}"
+        story.append(Paragraph(fix_arabic(txt), body_style))
+        story.append(Spacer(1, 10))
 
     # الخاتمة
     if outro_text:
-        pdf.ln(3)
-        pdf.multi_cell(0, 8, f"🏁 الخاتمة:\n{outro_text}", align="R")
+        story.append(Spacer(1, 10))
+        txt = f"🏁 <b>الخاتمة:</b><br/>{outro_text}"
+        story.append(Paragraph(fix_arabic(txt), body_style))
 
-    filename = f"Radio_{doc_type}_{int(asyncio.get_event_loop().time())}.pdf"
-    pdf.output(filename)
+    doc.build(story)
     return filename
 
 # ------------------------------------------
