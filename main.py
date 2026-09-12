@@ -18,6 +18,11 @@ from telegram.ext import (
     ContextTypes,
 )
 
+# مكتبة إنشاء ملفات الوورد
+import docx
+from docx.shared import Pt, Inches, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+
 # إعداد السجل
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
@@ -32,7 +37,10 @@ PASSCODE = os.environ.get("PASSCODE", "ibnhomaid11")
 DATA_FILE = "data.json"
 MAX_BATCH_FILES = 10
 
+# حالات الإدارة والمحادثات
 ADMIN_PASSCODE, ADMIN_SELECT_CAT, ADMIN_WAITING_FILES, ADMIN_WAITING_TITLE = range(4)
+INTRO_MAIN, INTRO_PARAS, INTRO_OUTRO = range(4, 7)
+PARA_TITLE, PARA_CONTENT = range(7, 9)
 
 ABOUT_TEXT = (
     "🎙️ **عن أرشيف إذاعة ابن حميد | HR Bot**\n"
@@ -125,12 +133,89 @@ async def safe_edit_text(query, text, reply_markup=None):
         pass
 
 # ------------------------------------------
+# 📄 دالة إنشاء وتنسيق ملف الوورد الذكية
+# ------------------------------------------
+def generate_word_document(doc_title, main_text, items_list, outro_text=None, doc_type="intro"):
+    doc = docx.Document()
+
+    total_words = len(main_text.split()) if main_text else 0
+    if outro_text:
+        total_words += len(outro_text.split())
+    for item in items_list:
+        if isinstance(item, dict):
+            total_words += len(item.get("title", "").split()) + len(item.get("content", "").split())
+        else:
+            total_words += len(str(item).split())
+
+    if total_words < 120:
+        title_size, heading_size, body_size = 22, 18, 16
+    elif total_words < 300:
+        title_size, heading_size, body_size = 20, 16, 14
+    else:
+        title_size, heading_size, body_size = 18, 14, 12
+
+    for section in doc.sections:
+        section.top_margin = Inches(0.8)
+        section.bottom_margin = Inches(0.8)
+        section.left_margin = Inches(0.8)
+        section.right_margin = Inches(0.8)
+
+    title_p = doc.add_paragraph()
+    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run_title = title_p.add_run(doc_title)
+    run_title.font.size = Pt(title_size)
+    run_title.font.bold = True
+    run_title.font.color.rgb = RGBColor(0, 51, 102)
+
+    doc.add_paragraph("━━━━━━━ • 🎙️ • ━━━━━━━").alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    if main_text:
+        p_main = doc.add_paragraph()
+        p_main.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r_main = p_main.add_run(f"📌 المقدمة:\n{main_text}\n")
+        r_main.font.size = Pt(body_size)
+        r_main.font.bold = True
+
+    for idx, item in enumerate(items_list, start=1):
+        p_item = doc.add_paragraph()
+        p_item.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        if doc_type == "intro":
+            r_head = p_item.add_run(f"✨ مقدمة الفقرة رقم ({idx}):\n")
+            r_head.font.bold = True
+            r_head.font.size = Pt(heading_size)
+            r_head.font.color.rgb = RGBColor(180, 100, 0)
+            
+            r_body = p_item.add_run(f"{item}\n")
+            r_body.font.size = Pt(body_size)
+        else:
+            r_head = p_item.add_run(f"🔹 {item['title']}:\n")
+            r_head.font.bold = True
+            r_head.font.size = Pt(heading_size)
+            r_head.font.color.rgb = RGBColor(0, 102, 51)
+
+            r_body = p_item.add_run(f"{item['content']}\n")
+            r_body.font.size = Pt(body_size)
+
+    if outro_text:
+        p_outro = doc.add_paragraph()
+        p_outro.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        r_outro = p_outro.add_run(f"\n🏁 الخاتمة:\n{outro_text}")
+        r_outro.font.size = Pt(body_size)
+        r_outro.font.bold = True
+        r_outro.font.color.rgb = RGBColor(100, 100, 100)
+
+    filename = f"Formatted_{doc_type}_{int(asyncio.get_event_loop().time())}.docx"
+    doc.save(filename)
+    return filename
+
+# ------------------------------------------
 # 🏠 الشاشة الرئيسية والأقسام
 # ------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     keyboard = [
         [InlineKeyboardButton("📁 الأرشيف الإذاعي", callback_data="archive_menu")],
+        [InlineKeyboardButton("🎙️ تنسيق إذاعة", callback_data="formatting_menu")],
         [InlineKeyboardButton("🗄️ الأرشيف العام (المحتوى المكتمل)", callback_data="cat_general_archive")],
         [InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info")]
     ]
@@ -139,13 +224,153 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "✨ **أرشيف إذاعة ابن حميد | HR Bot**\n"
         "━━━━━━━ • 📻 • ━━━━━━━\n\n"
         "مرحباً بك في المنصة الرقمية الموحدة لإدارة وتوثيق المحتوى الإذاعي.\n\n"
-        "اختر أحد الخيارات التالية للاستعراض والتصفح:"
+        "اختر أحد الخيارات التالية للاستعراض أو تنسيق ملفاتك:"
     )
     if update.callback_query:
         await safe_edit_text(update.callback_query, text, reply_markup)
     else:
         await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
+# ------------------------------------------
+# 📝 محادثة تنسيق المقدمات والفقرات
+# ------------------------------------------
+async def start_intro_formatter(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["intro_paras"] = []
+    
+    keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
+    await safe_edit_text(query, "📝 **تنسيق المقدمة الإذاعية:**\n\nأرسل **المقدمة العامة** للإذاعة الآن:", InlineKeyboardMarkup(keyboard))
+    return INTRO_MAIN
+
+async def receive_intro_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["intro_main_text"] = update.message.text.strip()
+    
+    keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
+    await update.message.reply_text(
+        f"✅ تم حفظ المقدمة العامة.\n\nأرسل الآن **مقدمة الفقرة الأولى**:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    return INTRO_PARAS
+
+async def receive_intro_paras(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    paras = context.user_data.get("intro_paras", [])
+    paras.append(update.message.text.strip())
+    context.user_data["intro_paras"] = paras
+
+    keyboard = [
+        [InlineKeyboardButton("✅ اكتفيت بالفقرات (انتقل للخاتمة)", callback_data="intro_done_paras")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]
+    ]
+    await update.message.reply_text(
+        f"✅ تم حفظ مقدمة الفقرة رقم ({len(paras)}).\n\nأرسل **مقدمة الفقرة رقم ({len(paras)+1})** أو اضغط الزر للتجاوز:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    return INTRO_PARAS
+
+async def intro_done_paras_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
+    await safe_edit_text(query, "✍️ أرسل الآن **الخاتمة الإذاعية**:", InlineKeyboardMarkup(keyboard))
+    return INTRO_OUTRO
+
+async def receive_intro_outro(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    outro_text = update.message.text.strip()
+    main_text = context.user_data.get("intro_main_text")
+    paras = context.user_data.get("intro_paras", [])
+
+    await update.message.reply_text("⏳ **جاري تنسيق وإنشاء ملف الوورد المنسق...**")
+
+    filename = generate_word_document("إذاعة مدرسية - مقدمات منسقة", main_text, paras, outro_text, doc_type="intro")
+
+    await update.message.reply_document(
+        document=open(filename, "rb"),
+        filename="مقدمة_إذاعية_منسقة.docx",
+        caption="🎉 **تم تنسيق المقدمة وتجهيز ملف الوورد بنجاح!**"
+    )
+    if os.path.exists(filename):
+        os.remove(filename)
+
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def start_para_formatter(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data["para_items"] = []
+
+    keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
+    await safe_edit_text(query, "📖 **تنسيق الفقرات الإذاعية:**\n\nأرسل **عنوان الفقرة الأولى** (مثال: القرآن الكريم، هل تعلم):", InlineKeyboardMarkup(keyboard))
+    return PARA_TITLE
+
+async def receive_para_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["temp_para_title"] = update.message.text.strip()
+
+    keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
+    await update.message.reply_text(
+        f"📌 **العنوان:** {context.user_data['temp_para_title']}\n\nأرسل الآن **محتوى هذه الفقرة**:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    return PARA_CONTENT
+
+async def receive_para_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    items = context.user_data.get("para_items", [])
+    title = context.user_data.get("temp_para_title")
+    content = update.message.text.strip()
+
+    items.append({"title": title, "content": content})
+    context.user_data["para_items"] = items
+
+    keyboard = [
+        [InlineKeyboardButton("➕ إضافة فقرة أخرى", callback_data="para_add_more")],
+        [InlineKeyboardButton("✅ اكتفيت بالفقرات وأنشئ الملف", callback_data="para_done_all")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]
+    ]
+    await update.message.reply_text(
+        f"✅ تم حفظ فقرة ({title}) بنجاح!\nعدد الفقرات الحالية: `{len(items)}`\n\nاختر خطوتك التالية:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
+    return PARA_TITLE
+
+async def para_add_more_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    keyboard = [[InlineKeyboardButton("❌ إلغاء", callback_data="cancel_conv")]]
+    await safe_edit_text(query, "أرسل **عنوان الفقرة التالية**:", InlineKeyboardMarkup(keyboard))
+    return PARA_TITLE
+
+async def para_done_all_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    items = context.user_data.get("para_items", [])
+
+    if not items:
+        await safe_edit_text(query, "❌ لم تقم بإضافة أي فقرة بعد!")
+        return ConversationHandler.END
+
+    await safe_edit_text(query, "⏳ **جاري تنسيق وإنشاء ملف الوورد المنسق...**")
+
+    filename = generate_word_document("فقرات إذاعية منسقة", None, items, None, doc_type="paragraphs")
+
+    chat_id = query.message.chat_id
+    await context.bot.send_document(
+        chat_id=chat_id,
+        document=open(filename, "rb"),
+        filename="فقرات_إذاعية_منسقة.docx",
+        caption="🎉 **تم تنسيق الفقرات وتجهيز ملف الوورد بنجاح!**"
+    )
+    if os.path.exists(filename):
+        os.remove(filename)
+
+    context.user_data.clear()
+    return ConversationHandler.END
+
+# ------------------------------------------
+# 🔘 معالج الأزرار العامة والأرشيف
+# ------------------------------------------
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
@@ -159,6 +384,15 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "about_info":
         await safe_edit_text(query, ABOUT_TEXT, back_main)
+
+    elif data == "formatting_menu":
+        keyboard = [
+            [InlineKeyboardButton("📝 تنسيق مقدمة إذاعية", callback_data="start_intro_formatter")],
+            [InlineKeyboardButton("📖 تنسيق فقرات إذاعية", callback_data="start_para_formatter")],
+            [InlineKeyboardButton("🏠 القائمة الرئيسية", callback_data="main")]
+        ]
+        text = "🎙️ **قسم تنسيق الإذاعة**\n━━━━━━━ • 📑 • ━━━━━━━\n\nاختر نوع التنسيق المطلوب لبدء إنشاء الملف:"
+        await safe_edit_text(query, text, InlineKeyboardMarkup(keyboard))
 
     elif data == "archive_menu":
         keyboard = [
@@ -194,7 +428,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text += f"📌 **{idx}. {info['title']}**\n"
                 keyboard.append([InlineKeyboardButton(f"📥 استعراض المحتوى رقم ({idx})", callback_data=f"dl:{cat_key}:{item_id}")])
                 
-                # إضافة فاصلة بين محتوى وآخر إذا لم يكن الأخير
                 if idx < total_items:
                     text += "━━━━━━━ • 📌 • ━━━━━━━\n"
 
@@ -406,9 +639,6 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
     )
     return ConversationHandler.END
 
-# ------------------------------------------
-# 🗑️ الحذف، النقل للإرشيف العام، والتحكم
-# ------------------------------------------
 async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
@@ -425,7 +655,6 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_delete_msg(context, query.message.chat_id, query.message.message_id)
         return ConversationHandler.END
 
-    # --- قسم الحذف ---
     if data == "adm_del_select_cat":
         keyboard = [
             [InlineKeyboardButton("🎙️ قسم الإذاعات", callback_data="admdelcat_broadcasts")],
@@ -465,7 +694,6 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
         await safe_edit_text(query, "❌ لم يتم العثور على الملف.", InlineKeyboardMarkup([[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]))
 
-    # --- قسم النقل إلى الأرشيف العام ---
     elif data == "adm_move_select_cat":
         keyboard = [
             [InlineKeyboardButton("🎙️ قسم الإذاعات", callback_data="admmovecat_broadcasts")],
@@ -515,8 +743,13 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit_text(query, "❌ لم يتم العثور على الملف لنقله.", InlineKeyboardMarkup([[InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")]]))
 
 async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if query:
+        await query.answer()
+        await safe_edit_text(query, "🚫 **تم إلغاء العملية.**")
+    else:
+        await update.message.reply_text("🚫 **تم إلغاء العملية.**")
     context.user_data.clear()
-    await update.message.reply_text("تم إلغاء العملية.")
     return ConversationHandler.END
 
 # ------------------------------------------
@@ -527,6 +760,7 @@ def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # محادثة الإدارة
     admin_conv = ConversationHandler(
         entry_points=[
             CommandHandler("admin", admin_command),
@@ -553,14 +787,51 @@ def main():
         },
         fallbacks=[
             CommandHandler("cancel", cancel_conv),
-            CommandHandler("admin", admin_command),
-            CallbackQueryHandler(admin_del_handler, pattern="^(adm_main|adm_cancel_op)$"),
-            CallbackQueryHandler(admin_cancel_passcode_handler, pattern="^adm_cancel_passcode$")
+            CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$"),
+            CallbackQueryHandler(admin_del_handler, pattern="^(adm_main|adm_cancel_op)$")
+        ],
+        per_user=True
+    )
+
+    # محادثة تنسيق المقدمة
+    intro_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(start_intro_formatter, pattern="^start_intro_formatter$")],
+        states={
+            INTRO_MAIN: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_intro_main)],
+            INTRO_PARAS: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_intro_paras),
+                CallbackQueryHandler(intro_done_paras_handler, pattern="^intro_done_paras$")
+            ],
+            INTRO_OUTRO: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_intro_outro)],
+        },
+        fallbacks=[CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$")],
+        per_user=True
+    )
+
+    # محادثة تنسيق الفقرات
+    para_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(start_para_formatter, pattern="^start_para_formatter$")],
+        states={
+            PARA_TITLE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_para_title),
+                CallbackQueryHandler(para_add_more_handler, pattern="^para_add_more$")
+            ],
+            PARA_CONTENT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, receive_para_content),
+                CallbackQueryHandler(para_done_all_handler, pattern="^para_done_all$")
+            ],
+        },
+        fallbacks=[
+            CallbackQueryHandler(cancel_conv, pattern="^cancel_conv$"),
+            CallbackQueryHandler(para_done_all_handler, pattern="^para_done_all$")
         ],
         per_user=True
     )
 
     app.add_handler(admin_conv)
+    app.add_handler(intro_conv)
+    app.add_handler(para_conv)
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^adm_"))
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^admdelcat_"))
