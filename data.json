@@ -1,6 +1,17 @@
 {
     "broadcasts": {},
-    "videos": {},
+    "videos": {
+        "item_1789294303": {
+            "title": "يوم الاثنين ، الأسبوع الرابع",
+            "files": [
+                {
+                    "file_id": "BAACAgQAAxkBAAIDuGqmc068k5oDVElBPqkiMRvtNMbWAAJqHwACzWYwURk_Fv1TBVmqPQQ",
+                    "type": "video",
+                    "text": null
+                }
+            ]
+        }
+    },
     "dialogues": {},
     "quizzes": {},
     "general_archive": {
