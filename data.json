@@ -1,27 +1,6 @@
 {
-    "broadcasts": {
-        "item_1789726845": {
-            "title": "تصميم يوم الأحد",
-            "files": [
-                {
-                    "file_id": "BQACAgQAAxkBAAIEGmqtEGUFTzBkuludGrys85XCm_c0AALlGgACS1pxUbily87o9CjAPQQ",
-                    "type": "document",
-                    "text": null
-                }
-            ]
-        }
-    },
+    "broadcasts": {},
     "videos": {
-        "item_1789294303": {
-            "title": "يوم الاثنين ، الأسبوع الرابع",
-            "files": [
-                {
-                    "file_id": "BAACAgQAAxkBAAIDuGqmc068k5oDVElBPqkiMRvtNMbWAAJqHwACzWYwURk_Fv1TBVmqPQQ",
-                    "type": "video",
-                    "text": null
-                }
-            ]
-        },
         "item_1789920413": {
             "title": "المقطع المرئي يوم الاثنين",
             "files": [
@@ -142,6 +121,26 @@
                 {
                     "file_id": "BQACAgQAAxkBAAIEB2qq35slYTBuU42axLG4dDU3Jp-kAAIrLAAC025YUfIY1grECPuuPQQ",
                     "type": "document",
+                    "text": null
+                }
+            ]
+        },
+        "item_1789726845": {
+            "title": "تصميم يوم الأحد",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAIEGmqtEGUFTzBkuludGrys85XCm_c0AALlGgACS1pxUbily87o9CjAPQQ",
+                    "type": "document",
+                    "text": null
+                }
+            ]
+        },
+        "item_1789294303": {
+            "title": "يوم الاثنين ، الأسبوع الرابع",
+            "files": [
+                {
+                    "file_id": "BAACAgQAAxkBAAIDuGqmc068k5oDVElBPqkiMRvtNMbWAAJqHwACzWYwURk_Fv1TBVmqPQQ",
+                    "type": "video",
                     "text": null
                 }
             ]
