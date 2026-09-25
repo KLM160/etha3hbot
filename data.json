@@ -1,6 +1,17 @@
 {
     "broadcasts": {},
-    "videos": {},
+    "videos": {
+        "item_1790310772_4b0df50b": {
+            "title": "التوكل على الله ( عثمان خميس )",
+            "files": [
+                {
+                    "file_id": "BAACAgQAAxkBAAIEWGq1-WGw71CLshZ9R7Tq-0QtRaetAAJQHgACx52xUabdZSjYIh2yPQQ",
+                    "type": "video",
+                    "text": null
+                }
+            ]
+        }
+    },
     "dialogues": {},
     "quizzes": {},
     "general_archive": {
