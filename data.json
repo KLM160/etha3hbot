@@ -1,5 +1,21 @@
 {
-    "broadcasts": {},
+    "broadcasts": {
+        "item_1790403090_1c5ca738": {
+            "title": "إذاعة عن التوكل على الله",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAIEZmq3YaQmr9Bb6GMw0qdWwqzB54GPAAK3IAACUCK5UR-vpXAieJ-oPQQ",
+                    "type": "document",
+                    "text": null
+                },
+                {
+                    "file_id": "BQACAgQAAxkBAAIEZ2q3YaTKebcjZWhOZTjRhOxWQav4AAK4IAACUCK5UWa4Kjqe9-r5PQQ",
+                    "type": "document",
+                    "text": null
+                }
+            ]
+        }
+    },
     "videos": {
         "item_1790310772_4b0df50b": {
             "title": "التوكل على الله ( عثمان خميس )",
