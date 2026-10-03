@@ -21,7 +21,18 @@
             ]
         }
     },
-    "videos": {},
+    "videos": {
+        "item_1790999403_479818c8": {
+            "title": "صلاة الفجر",
+            "files": [
+                {
+                    "file_id": "BAACAgQAAxkBAAIEzmrAe2UF4eYUrtxDE_7e4r0ilC-IAAIaHQACd4kJUksqXur2YJdNPQQ",
+                    "type": "video",
+                    "text": null
+                }
+            ]
+        }
+    },
     "dialogues": {
         "item_1790998782_8daee471": {
             "title": "وقفة تأمل",
