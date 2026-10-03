@@ -22,7 +22,23 @@
         }
     },
     "videos": {},
-    "dialogues": {},
+    "dialogues": {
+        "item_1790998782_8daee471": {
+            "title": "وقفة تأمل",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAIEvGrAeOtjwUQfqy1cTlR9ddnRgt5CAAIZHQACd4kJUr0sfi98cPgKPQQ",
+                    "type": "document",
+                    "text": null
+                },
+                {
+                    "file_id": "BQACAgQAAxkBAAIEvWrAeOv27OLBjstFNgjUtXtsAbZMAAIYHQACd4kJUsOaY6ETpc_4PQQ",
+                    "type": "document",
+                    "text": null
+                }
+            ]
+        }
+    },
     "quizzes": {},
     "general_archive": {
         "item_1788610686": {
