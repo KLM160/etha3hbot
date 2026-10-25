@@ -3,7 +3,8 @@
 --------------------------------------------------
 main.py : نقطة التشغيل + القائمة الرئيسية + حارس المالك + إعداد أوامر البوت.
 
-كل قسم ملف مستقل داخل sections/ ويحتوي: TITLE و MENU ودالة register(app).
+كل قسم ملف مستقل (todo.py, quran.py, english.py, qudrat.py, workout.py, radio.py)
+ويحتوي: TITLE و MENU ودالة register(app).
 لإضافة قسم جديد: أنشئ ملفه ثم أضفه إلى قائمة SECTIONS أدناه.
 """
 import logging
@@ -24,7 +25,12 @@ from telegram.ext import (
 )
 
 from config import ALLOWED_USER_ID, OWNER_NAME, TOKEN
-from sections import english, qudrat, quran, radio, todo, workout
+import english
+import qudrat
+import quran
+import radio
+import todo
+import workout
 from utils import grid, safe_edit_text
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
