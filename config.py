@@ -13,3 +13,4 @@ ALLOWED_USER_ID = 8912887919
 OWNER_NAME = "حامد"
 
 ITEMS_PER_PAGE = 8  # عدد الأزرار في كل صفحة من القوائم
+DATA_DIR = "data"   # مجلد ملفات json الخاصة بالأقسام الجديدة (الإذاعة تبقى على data.json)

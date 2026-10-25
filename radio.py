@@ -3,7 +3,7 @@
 --------------------------------------------------
 يحتفظ بنفس بيانات الأرشيف السابق (data.json) ونفس منطقه،
 وبدون كلمة سر للإدارة لأن البوت مغلق على المالك بالكامل (انظر owner_guard في main.py).
-نقطة الربط الوحيدة مع main.py: الدالة register(app).
+نقطة الربط الوحيدة مع main.py: TITLE و MENU ودالة register(app).
 """
 import asyncio
 import base64
@@ -27,13 +27,16 @@ from telegram.ext import (
 )
 
 from config import GH_REPO, GH_TOKEN
-from utils import build_paginated_keyboard, safe_delete_msg, safe_edit_text
+from utils import build_paginated_keyboard, grid, home_button, safe_delete_msg, safe_edit_text
 
 logger = logging.getLogger("bot.radio")
 
 # ----------------------------------------------------------------------------
 # الثوابت
 # ----------------------------------------------------------------------------
+TITLE = "📻 الإذاعة المدرسية"
+MENU = "radio_menu"
+
 DATA_FILE = "data.json"
 MAX_BATCH_FILES = 10
 
@@ -127,13 +130,14 @@ BACK_RADIO = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 قائمة الإ
 
 
 async def radio_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📁 الأرشيف الإذاعي", callback_data="archive_menu")],
-        [InlineKeyboardButton("🗄️ الأرشيف العام (المحتوى المكتمل)", callback_data="cat_general_archive:0")],
-        [InlineKeyboardButton("⚙️ إدارة الإذاعة", callback_data="adm_main")],
-        [InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info")],
-        [InlineKeyboardButton("🏠 الرئيسية", callback_data="main")],
-    ])
+    kb = InlineKeyboardMarkup(
+        grid([
+            InlineKeyboardButton("📁 الأرشيف الإذاعي", callback_data="archive_menu"),
+            InlineKeyboardButton("🗄️ الأرشيف العام", callback_data="cat_general_archive:0"),
+            InlineKeyboardButton("⚙️ إدارة الإذاعة", callback_data="adm_main"),
+            InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info"),
+        ]) + [[home_button()]]
+    )
     text = (
         "📻 **الإذاعة المدرسية**\n"
         "━━━━━━━ • 📻 • ━━━━━━━\n\n"
@@ -146,9 +150,6 @@ async def radio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query, data = update.callback_query, update.callback_query.data
     await query.answer()
 
-    if data == "noop":
-        return
-
     if data == "radio_menu":
         await radio_menu(update, context)
 
@@ -156,7 +157,7 @@ async def radio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit_text(query, ABOUT_TEXT, BACK_RADIO)
 
     elif data == "archive_menu":
-        kb = [[InlineKeyboardButton(name, callback_data=f"cat_{k}:0")] for k, name in CAT_NAMES.items() if k != "general_archive"]
+        kb = grid([InlineKeyboardButton(name, callback_data=f"cat_{k}:0") for k, name in CAT_NAMES.items() if k != "general_archive"])
         kb.append([InlineKeyboardButton("🔙 قائمة الإذاعة", callback_data="radio_menu")])
         await safe_edit_text(
             query,
@@ -236,13 +237,14 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("➕ إضافة ملفات جديدة", callback_data="adm_add_start")],
-        [InlineKeyboardButton("📦 نقل للأرشيف العام", callback_data="adm_move_select_cat")],
-        [InlineKeyboardButton("🗑️ حذف ملف من الأقسام", callback_data="adm_del_select_cat")],
-        [InlineKeyboardButton("🔙 قائمة الإذاعة", callback_data="radio_menu")],
-        [InlineKeyboardButton("❌ إغلاق لوحة التحكم", callback_data="adm_close")],
-    ])
+    kb = InlineKeyboardMarkup(
+        grid([
+            InlineKeyboardButton("➕ إضافة ملفات", callback_data="adm_add_start"),
+            InlineKeyboardButton("📦 نقل للأرشيف العام", callback_data="adm_move_select_cat"),
+            InlineKeyboardButton("🗑️ حذف ملف", callback_data="adm_del_select_cat"),
+            InlineKeyboardButton("🔙 قائمة الإذاعة", callback_data="radio_menu"),
+        ]) + [[InlineKeyboardButton("❌ إغلاق لوحة التحكم", callback_data="adm_close")]]
+    )
     text = "⚙️ **إدارة الإذاعة المدرسية**"
     if update.callback_query:
         await safe_edit_text(update.callback_query, text, kb)
@@ -254,7 +256,7 @@ async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    kb = [[InlineKeyboardButton(name, callback_data=f"admcat_{k}")] for k, name in CAT_NAMES.items() if k != "general_archive"]
+    kb = grid([InlineKeyboardButton(name, callback_data=f"admcat_{k}") for k, name in CAT_NAMES.items() if k != "general_archive"])
     kb.append([InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")])
     await safe_edit_text(query, "📁 **اختر القسم للإضافة:**", InlineKeyboardMarkup(kb))
     return ADMIN_SELECT_CAT
@@ -378,7 +380,7 @@ async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     back_admin = InlineKeyboardMarkup([[InlineKeyboardButton("« عودة للإدارة", callback_data="adm_main")]])
 
     if data in ("adm_del_select_cat", "adm_move_select_cat"):
-        kb = [[InlineKeyboardButton(name, callback_data=f"adm{op}cat_{k}")] for k, name in CAT_NAMES.items()]
+        kb = grid([InlineKeyboardButton(name, callback_data=f"adm{op}cat_{k}") for k, name in CAT_NAMES.items()])
         kb.append([InlineKeyboardButton("« عودة للإدارة", callback_data="adm_main")])
         await safe_edit_text(query, f"اختر القسم لـ ({'الحذف' if op == 'del' else 'النقل'}):", InlineKeyboardMarkup(kb))
         return
@@ -465,4 +467,4 @@ def register(app) -> None:
     )
     app.add_handler(admin_conv)
     app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^adm"))
-    app.add_handler(CallbackQueryHandler(radio_handler, pattern=r"^(radio_menu|archive_menu|about_info|cat_|dl:|noop)"))
+    app.add_handler(CallbackQueryHandler(radio_handler, pattern=r"^(radio_menu|archive_menu|about_info|cat_|dl:)"))
