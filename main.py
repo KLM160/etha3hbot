@@ -30,11 +30,13 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest, TelegramError
 from telegram.ext import (
     ApplicationBuilder,
+    ApplicationHandlerStop,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     ConversationHandler,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -87,6 +89,25 @@ CAT_NAMES = {
 DATA_LOCK = threading.Lock()
 # قفل مستقل لملف جلسات المشرفين المصرّح لهم.
 ADMIN_LOCK = threading.Lock()
+
+# ----------------------------------------------------------------------------
+# 🔒 البوت خاص بالمالك فقط
+# ----------------------------------------------------------------------------
+ALLOWED_USER_ID = 8912887919
+
+DASH_SECTIONS = {
+    "dash_quran": "📖 القرآن وتطوير اللغة",
+    "dash_study": "🎯 القدرات والدراسة",
+    "dash_health": "🏋️ الصحة والرياضة",
+    "dash_todo": "📝 المهام اليومية (To-Do)",
+}
+
+
+async def owner_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """يتجاهل أي تحديث من غير المالك بصمت قبل وصوله لأي Handler."""
+    user = update.effective_user
+    if user is None or user.id != ALLOWED_USER_ID:
+        raise ApplicationHandlerStop
 
 
 # ----------------------------------------------------------------------------
@@ -277,17 +298,10 @@ async def require_admin(update: Update) -> bool:
 # ----------------------------------------------------------------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📁 الأرشيف الإذاعي", callback_data="archive_menu")],
-        [InlineKeyboardButton("🗄️ الأرشيف العام (المحتوى المكتمل)", callback_data="cat_general_archive:0")],
-        [InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info")],
-    ])
-    text = (
-        "✨ **أرشيف إذاعة ابن حميد | HR Bot**\n"
-        "━━━━━━━ • 📻 • ━━━━━━━\n\n"
-        "مرحباً بك في المنصة الرقمية الموحدة لتوثيق المحتوى الإذاعي.\n"
-        "اختر من القائمة أدناه:"
+    kb = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(title, callback_data=key)] for key, title in DASH_SECTIONS.items()]
     )
+    text = "🚀 **Personal Dashboard**\n━━━━━━━ • ✨ • ━━━━━━━\n\nاختر القسم:"
     if update.callback_query:
         await safe_edit_text(update.callback_query, text, kb)
     else:
@@ -309,6 +323,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data == "main":
         await start(update, context)
+
+    elif data in DASH_SECTIONS:
+        await safe_edit_text(
+            query,
+            f"**{DASH_SECTIONS[data]}**\n━━━━━━━ • ✨ • ━━━━━━━\n\n🚧 هذا القسم قيد البناء.",
+            back_main,
+        )
 
     elif data == "about_info":
         await safe_edit_text(query, ABOUT_TEXT, back_main)
@@ -684,6 +705,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 def main():
     threading.Thread(target=run_dummy_server, daemon=True).start()
     app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(TypeHandler(Update, owner_guard), group=-1)  # حارس المالك
 
     admin_conv = ConversationHandler(
         entry_points=[
