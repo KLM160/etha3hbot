@@ -59,7 +59,7 @@ async def owner_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def home_text() -> str:
     return (
-        "⏳ **يوماً ما | One Day ⏳💪**\n"
+        " **يوماً ما | One Day ⏳💪**\n"
         "━━━━━━━ • ✨ • ━━━━━━━\n\n"
         f"يا هلا {OWNER_NAME} 👋\n"
         "يومك الجديد بدأ، وكل خطوة اليوم تقرّبك من حلمك. خلّنا نصنع أثرنا 💪\n\n"
