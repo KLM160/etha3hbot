@@ -1,11 +1,10 @@
 """
 يوماً ما | One Day ⏳💪 — مساعد حامد الشخصي
 --------------------------------------------------
-main.py : نقطة التشغيل + القائمة الرئيسية + حارس المالك + إعداد أوامر البوت.
-
-كل قسم ملف مستقل (todo.py, quran.py, english.py, qudrat.py, workout.py, radio.py)
-ويحتوي: TITLE و MENU ودالة register(app).
-لإضافة قسم جديد: أنشئ ملفه ثم أضفه إلى قائمة SECTIONS أدناه.
+main.py   : التشغيل + القائمة الرئيسية + حارس المالك + أوامر البوت.
+config.py : الإعدادات (متغيرات البيئة).   utils.py : أدوات مشتركة + مزامنة GitHub.
+كل قسم ملف مستقل (todo, quran, english, qudrat, workout, radio) ويحتوي: TITLE و MENU و register(app).
+لإضافة قسم جديد: أنشئ ملفه ثم أضفه إلى SECTIONS أدناه.
 """
 import asyncio
 import logging
@@ -35,9 +34,12 @@ import workout
 from utils import claim_panel, drop_old_panel, grid, safe_delete_msg, safe_edit_text, track_panel
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+# httpx يطبع روابط الطلبات وفيها توكن البوت — نخفيها من لوج Render
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("bot")
 
-# ترتيب الظهور في القائمة الرئيسية (صفّان لكل سطر)
+# ترتيب الظهور في القائمة الرئيسية
 SECTIONS = [todo, quran, english, qudrat, workout, radio]
 
 MOTIVATION = [
@@ -52,9 +54,8 @@ MOTIVATION = [
 
 
 async def owner_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """🔒 يتجاهل أي تحديث من غير المالك بصمت، ثم يضمن واجهة واحدة فقط:
-    أي زر يُضغط من رسالة غير الواجهة الفعّالة (واجهة قديمة قبل تحديث/إعادة تشغيل البوت)
-    تُحذف الرسالة القديمة ويُوقَف التحديث قبل وصوله لأي Handler."""
+    """🔒 يتجاهل غير المالك بصمت، ويضمن واجهة واحدة فقط:
+    أي زر من رسالة غير الواجهة الفعّالة (واجهة قديمة) تُحذف رسالته ويُوقَف التحديث."""
     user = update.effective_user
     if user is None or user.id != ALLOWED_USER_ID:
         raise ApplicationHandlerStop
@@ -71,7 +72,7 @@ async def owner_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def home_text() -> str:
     return (
-        " **يوماً ما | One Day ⏳💪**\n"
+        "**يوماً ما | One Day ⏳💪**\n"
         "━━━━━━━ • ✨ • ━━━━━━━\n\n"
         f"يا هلا {OWNER_NAME} 👋\n"
         "يومك الجديد بدأ، وكل خطوة اليوم تقرّبك من حلمك. خلّنا نصنع أثرنا 💪\n\n"
@@ -97,16 +98,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = home_keyboard()
     query = update.callback_query
 
-    if query:  # رجوع للرئيسية: تعديل في نفس الرسالة وتحديث المعرّف المحفوظ
+    if query:  # رجوع للرئيسية: تعديل في نفس الرسالة
         await safe_edit_text(query, home_text(), kb)
         track_panel(context, query.message)
         return
 
     chat_id = update.effective_chat.id
-    msg = update.effective_message
-    if msg:
-        await safe_delete_msg(context, chat_id, msg.message_id)  # رسالة الأمر نفسها
-    await drop_old_panel(context)  # الشاشة الفعّالة السابقة (لوحة التحكم فقط، لا ملفات الأرشيف)
+    if update.effective_message:
+        await safe_delete_msg(context, chat_id, update.effective_message.message_id)  # رسالة الأمر نفسها
+    await drop_old_panel(context)  # الشاشة الفعّالة السابقة
     sent = await context.bot.send_message(chat_id, home_text(), reply_markup=kb, parse_mode="Markdown")
     track_panel(context, sent)
 
@@ -124,30 +124,34 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def post_init(app) -> None:
-    """يجلب أحدث أرشيف من GitHub، ثم يضبط أوامر البوت ونصوص ملفه الشخصي عند كل تشغيل."""
-    await asyncio.to_thread(radio.restore_from_github)  # 🔄 قرص Render مؤقت: نعتمد GitHub كمصدر أصلي
+    """يجلب أحدث أرشيف من GitHub، ثم يضبط أوامر البوت عند كل تشغيل."""
+    await asyncio.to_thread(radio.restore_from_github)
     try:
-        # يمسح أوامر النطاق الافتراضي فقط (فلا تظهر أوامر لغير المالك)؛
-        # أما أوامر شات المالك (ومنها /admin القديم) فتُستبدل بالسطر التالي.
-        await app.bot.delete_my_commands()
+        await app.bot.delete_my_commands()  # يمسح النطاق الافتراضي فقط فلا تظهر أوامر لغير المالك
         await app.bot.set_my_commands(
             [BotCommand("start", "⏳ اللوحة الرئيسية")],
             scope=BotCommandScopeChat(chat_id=ALLOWED_USER_ID),
         )
-        # وصف فارغ تماماً حتى لا يظهر أي نص قبل /start
-        await app.bot.set_my_short_description("")
+        await app.bot.set_my_short_description("")  # وصف فارغ حتى لا يظهر نص قبل /start
         await app.bot.set_my_description("")
     except TelegramError as e:
         logger.warning("تعذّر ضبط أوامر/وصف البوت: %s", e)
 
 
 class SimpleHandler(BaseHTTPRequestHandler):
-    """خادم بسيط لإبقاء الخدمة حية على منصات مثل Render."""
+    """خادم بسيط لإبقاء الخدمة حية على Render (يدعم GET و HEAD لأدوات المراقبة)."""
 
-    def do_GET(self):
+    def _ok(self, body: bool):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"One Day Bot Running")
+        if body:
+            self.wfile.write(b"One Day Bot Running")
+
+    def do_GET(self):
+        self._ok(True)
+
+    def do_HEAD(self):
+        self._ok(False)
 
     def log_message(self, format, *args):  # noqa: A002
         return

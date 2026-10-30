@@ -1,10 +1,10 @@
 """
 📻 الإذاعة المدرسية — أرشيف إذاعة ابن حميد
 --------------------------------------------------
-- يحتفظ بنفس بيانات الأرشيف (data.json) ونفس منطقه.
-- الأرشيف الإذاعي يعرض الملفات مباشرة (بدون أقسام فرعية) مع صفحات.
-- الإضافة والحذف والنقل تتم من نفس صفحة التصفح (البوت مغلق على المالك: owner_guard في main.py).
-نقطة الربط الوحيدة مع main.py: TITLE و MENU ودالة register(app).
+قسمان فقط (data.json):  "archive" = الأرشيف  |  "general_archive" = الأرشيف العام
+- الملفات تُعرض مباشرة مع صفحات، والإضافة/الحذف/النقل من نفس صفحة التصفح.
+- كل تعديل يُحفظ محليًا ثم يُرفع إلى GitHub برسالة commit توضّح نوع التعديل.
+نقطة الربط مع main.py: TITLE و MENU و register(app) و restore_from_github().
 """
 import asyncio
 import json
@@ -15,7 +15,7 @@ import time
 import uuid
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.error import TelegramError
+from telegram.error import BadRequest, TelegramError
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -25,9 +25,20 @@ from telegram.ext import (
     filters,
 )
 
-import github_sync
 from config import ALLOWED_USER_ID, GH_DATA_PATH
-from utils import build_paginated_keyboard, grid, home_button, safe_delete_msg, safe_edit_text, drop_old_panel, track_panel
+from utils import (
+    build_paginated_keyboard,
+    drop_old_panel,
+    github_enabled,
+    github_pull,
+    github_push,
+    grid,
+    home_button,
+    md_safe,
+    safe_delete_msg,
+    safe_edit_text,
+    track_panel,
+)
 
 logger = logging.getLogger("bot.radio")
 
@@ -37,12 +48,15 @@ logger = logging.getLogger("bot.radio")
 TITLE = "📻 الإذاعة المدرسية"
 MENU = "radio_menu"
 
-DATA_FILE = "data.json"
-DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), DATA_FILE)  # مسار ثابت مهما كان مجلد التشغيل
+DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")  # مسار ثابت مهما كان مجلد التشغيل
 MAX_BATCH_FILES = 10
 MANAGE_PER_PAGE = 5
 
-ADMIN_WAITING_FILES, ADMIN_WAITING_TITLE = range(2)
+WAITING_FILES, WAITING_TITLE = range(2)
+
+VIEWS = {"archive": "📁 الأرشيف", "general_archive": "🗄️ الأرشيف العام"}  # عناوين الأزرار
+VIEW_NAMES = {"archive": "الأرشيف", "general_archive": "الأرشيف العام"}    # للنصوص ورسائل GitHub
+LEGACY_KEYS = ("broadcasts", "videos", "dialogues", "quizzes")            # أقسام قديمة تُدمج في «الأرشيف»
 
 ABOUT_TEXT = (
     "🎙️ **عن أرشيف إذاعة ابن حميد | HR Bot**\n"
@@ -52,65 +66,109 @@ ABOUT_TEXT = (
     "💻 **التطوير والبرمجة:** AboZaid"
 )
 
-# مفاتيح data.json القديمة محفوظة كما هي (للحفاظ على البيانات الحالية)
-DEFAULT_DATA = {"broadcasts": {}, "videos": {}, "dialogues": {}, "quizzes": {}, "general_archive": {}}
-
-# "الأرشيف الإذاعي" عرض موحّد يجمع الأقسام القديمة في قائمة واحدة
-ARCHIVE_SOURCES = ("broadcasts", "videos", "dialogues", "quizzes")
-ADD_TARGET = {"archive": "broadcasts", "general_archive": "general_archive"}  # أين تُحفظ الإضافات الجديدة
-VIEW_TITLES = {"archive": "📁 الأرشيف الإذاعي", "general_archive": "🗄️ الأرشيف العام"}
-
 DATA_LOCK = threading.Lock()
-SYNC_LOCK = threading.Lock()  # دفعة GitHub واحدة في كل مرة (يتفادى تعارض sha)
 _BG_TASKS: set = set()  # مراجع لمهام المزامنة حتى لا يجمعها GC قبل انتهائها
 
+BACK_ROW = [InlineKeyboardButton("🔙 قائمة الإذاعة", callback_data=MENU)]
+BACK_RADIO = InlineKeyboardMarkup([BACK_ROW])
+
 
 # ----------------------------------------------------------------------------
-# بيانات الأرشيف
+# البيانات
 # ----------------------------------------------------------------------------
+def _normalize(raw) -> tuple:
+    """يرجع (بيانات بالشكل الجديد، هل كانت قديمة؟) — يدمج الأقسام القديمة في archive."""
+    raw = raw if isinstance(raw, dict) else {}
+    data = {v: dict(raw.get(v) or {}) for v in VIEWS}
+    legacy = [k for k in LEGACY_KEYS if k in raw]
+    for k in legacy:
+        data["archive"].update(raw[k] or {})
+    return data, bool(legacy)
+
+
+def _save_locked(data: dict) -> None:
+    tmp = f"{DATA_PATH}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+    os.replace(tmp, DATA_PATH)
+
+
 def load_data() -> dict:
     with DATA_LOCK:
         if not os.path.exists(DATA_PATH):
-            _save_data_locked(DEFAULT_DATA)
-            return json.loads(json.dumps(DEFAULT_DATA))
+            data, _ = _normalize({})
+            _save_locked(data)
+            return data
         try:
             with open(DATA_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return {**DEFAULT_DATA, **data}
-        except Exception as e:
-            logger.error("JSON Error عند قراءة %s: %s", DATA_FILE, e)
-            return json.loads(json.dumps(DEFAULT_DATA))
-
-
-def _save_data_locked(data: dict) -> None:
-    tmp_path = f"{DATA_PATH}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
-    os.replace(tmp_path, DATA_PATH)
+                raw = json.load(f)
+        except Exception as e:  # noqa: BLE001
+            logger.error("JSON تالف في %s: %s — نُسخ إلى .bak", DATA_PATH, e)
+            try:
+                os.replace(DATA_PATH, f"{DATA_PATH}.bak")  # حتى لا تُكتب فوقه بيانات فارغة
+            except OSError:
+                pass
+            return _normalize({})[0]
+        data, was_legacy = _normalize(raw)
+        if was_legacy:
+            _save_locked(data)
+        return data
 
 
 def save_data(data: dict) -> None:
     with DATA_LOCK:
-        _save_data_locked(data)
+        _save_locked(data)
 
 
 def new_item_id() -> str:
     return f"item_{int(time.time())}_{uuid.uuid4().hex[:8]}"
 
 
-def sync_to_github() -> tuple:
-    """يرفع data.json إلى GitHub ويرجع (نجح؟، رسالة).
-    وسم [skip render] في الرسالة يمنع Render من إعادة نشر البوت مع كل تعديل."""
-    return github_sync.push_file(DATA_PATH, GH_DATA_PATH, "🔄 التحديث التلقائي للأرشيف [skip render]")
+def item_timestamp(iid: str) -> int:
+    try:
+        return int(str(iid).split("_")[1])
+    except (IndexError, ValueError):
+        return 0
 
 
+def sorted_items(db: dict, view: str) -> list:
+    """[(item_id, info)] مرتّبة من الأقدم إلى الأحدث."""
+    items = [(iid, info) for iid, info in (db.get(view) or {}).items() if isinstance(info, dict)]
+    return sorted(items, key=lambda x: item_timestamp(x[0]))
+
+
+def item_title(info) -> str:
+    if isinstance(info, dict) and info.get("title"):
+        return str(info["title"])
+    return "بدون عنوان"
+
+
+def one_line(text: str) -> str:
+    return " ".join(str(text).split())
+
+
+def short(text: str, n: int = 50) -> str:
+    t = one_line(text)
+    return t if len(t) <= n else t[: n - 1] + "…"
+
+
+def parse_view(value: str) -> str:
+    return value if value in VIEWS else "archive"
+
+
+def parse_page(value) -> int:
+    return int(value) if str(value).isdigit() else 0
+
+
+# ----------------------------------------------------------------------------
+# GitHub
+# ----------------------------------------------------------------------------
 def restore_from_github() -> None:
-    """عند بدء التشغيل: يجلب آخر data.json من GitHub ويستبدل النسخة المحلية.
-    (قرص Render مؤقت، ونسخة النشر قد تكون أقدم من آخر تعديل — هذا سبب رجوع المحذوفات.)"""
-    if not github_sync.enabled():
+    """عند التشغيل: يجلب آخر data.json من GitHub (قرص Render مؤقت ونسخة النشر قد تكون أقدم)."""
+    if not github_enabled():
         logger.warning("⚠️ GH_TOKEN/GH_REPO غير مضبوطين: لن تُحفظ تعديلات الأرشيف بعد إعادة التشغيل!")
         return
-    raw = github_sync.pull_file(GH_DATA_PATH)
+    raw = github_pull(GH_DATA_PATH)
     if raw is None:
         logger.warning("لم يتم جلب data.json من GitHub، سيُستخدم الملف المحلي.")
         return
@@ -121,62 +179,16 @@ def restore_from_github() -> None:
     except Exception as e:  # noqa: BLE001
         logger.error("data.json في GitHub غير صالح، سيُستخدم الملف المحلي: %s", e)
         return
+    data, was_legacy = _normalize(remote)
     with DATA_LOCK:
-        _save_data_locked(remote)
+        _save_locked(data)
     logger.info("✅ تم تحميل أحدث أرشيف من GitHub.")
+    if was_legacy:  # نسخة GitHub بالشكل القديم: ننظّفها مرة واحدة
+        github_push(DATA_PATH, GH_DATA_PATH, "🧹 تنظيف: دمج الأقسام القديمة في «الأرشيف» [skip render]")
 
 
-def view_of(cat_key: str) -> str:
-    """يحوّل أي مفتاح قسم (قديم أو جديد) إلى العرض المناسب: archive أو general_archive."""
-    return "general_archive" if cat_key == "general_archive" else "archive"
-
-
-def item_timestamp(iid: str) -> int:
-    """يستخرج التوقيت من المعرّف item_<timestamp>_... ويرجع 0 عند فشل التحويل."""
-    try:
-        return int(str(iid).split("_")[1])
-    except (IndexError, ValueError):
-        return 0
-
-
-def collect_items(db: dict, view: str) -> list:
-    """قائمة مسطّحة [(cat_key, item_id, info)] مرتّبة زمنياً من الأقدم إلى الأحدث."""
-    keys = ("general_archive",) if view == "general_archive" else ARCHIVE_SOURCES
-    items = [(k, iid, info) for k in keys for iid, info in (db.get(k) or {}).items() if isinstance(info, dict)]
-    return sorted(items, key=lambda x: item_timestamp(x[1]))  # ترتيب مستقر: المتساوي يبقى كما هو
-
-
-def item_title(info) -> str:
-    """عنوان العنصر مع حماية من البيانات الناقصة."""
-    if isinstance(info, dict) and info.get("title"):
-        return str(info["title"])
-    return "بدون عنوان"
-
-
-def one_line(text: str) -> str:
-    """يحوّل أسطر العنوان إلى سطر واحد لاستخدامه داخل نص الزر."""
-    return str(text).replace("\r", " ").replace("\n", " ")
-
-
-def find_item_cat(db: dict, view: str, iid: str):
-    for cat, i, _ in collect_items(db, view):
-        if i == iid:
-            return cat
-    return None
-
-
-def md_safe(text: str) -> str:
-    for ch in "*_`[":
-        text = text.replace(ch, "")
-    return text
-
-
-def _page(value) -> int:
-    return int(value) if str(value).isdigit() else 0
-
-
-async def _sync_and_report(context) -> None:
-    ok, msg = await asyncio.to_thread(sync_to_github)
+async def _sync_and_report(context, message: str) -> None:
+    ok, msg = await asyncio.to_thread(github_push, DATA_PATH, GH_DATA_PATH, message)
     if ok:
         return
     try:  # تنبيه صريح للمالك بدل الفشل الصامت
@@ -188,8 +200,9 @@ async def _sync_and_report(context) -> None:
         pass
 
 
-def _sync_async(context) -> None:
-    task = asyncio.create_task(_sync_and_report(context))
+def sync(context, action: str) -> None:
+    """يرفع data.json في الخلفية؛ action = وصف التعديل ويصير رسالة الـ commit."""
+    task = asyncio.create_task(_sync_and_report(context, f"{action} [skip render]"))
     _BG_TASKS.add(task)
     task.add_done_callback(_BG_TASKS.discard)
 
@@ -197,15 +210,11 @@ def _sync_async(context) -> None:
 # ----------------------------------------------------------------------------
 # واجهة التصفح
 # ----------------------------------------------------------------------------
-BACK_RADIO = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 قائمة الإذاعة", callback_data="radio_menu")]])
-BACK_ROW = [InlineKeyboardButton("🔙 قائمة الإذاعة", callback_data="radio_menu")]
-
-
 async def radio_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup(
         grid([
-            InlineKeyboardButton(VIEW_TITLES["archive"], callback_data="cat_archive:0"),
-            InlineKeyboardButton(VIEW_TITLES["general_archive"], callback_data="cat_general_archive:0"),
+            InlineKeyboardButton(VIEWS["archive"], callback_data="cat_archive:0"),
+            InlineKeyboardButton(VIEWS["general_archive"], callback_data="cat_general_archive:0"),
             InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info"),
         ]) + [[home_button()]]
     )
@@ -218,10 +227,9 @@ async def radio_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def render_view(query, view: str, page: int = 0) -> None:
-    """يعرض ملفات الأرشيف مباشرة مع الصفحات وأزرار الإضافة/الإدارة أسفلها."""
-    items = collect_items(load_data(), view)
+    items = sorted_items(load_data(), view)
     add_btn = InlineKeyboardButton("➕ إضافة محتوى جديد", callback_data=f"adm_add:{view}")
-    text = f"📂 **{VIEW_TITLES[view]}**\n━━━━━━━ • 📑 • ━━━━━━━\n\n"
+    text = f"📂 **{VIEWS[view]}**\n━━━━━━━ • 📑 • ━━━━━━━\n\n"
 
     if not items:
         text += "⚠️ **لا توجد ملفات مضافة حالياً.**"
@@ -229,8 +237,8 @@ async def render_view(query, view: str, page: int = 0) -> None:
     else:
         text += "👇 **قائمة المحتوى المتاح:**"
         buttons = [
-            (iid, InlineKeyboardButton(f"📥 {idx}. {one_line(item_title(info))}", callback_data=f"dl:{cat}:{iid}"))
-            for idx, (cat, iid, info) in enumerate(items, start=1)
+            InlineKeyboardButton(f"📥 {idx}. {short(item_title(info), 55)}", callback_data=f"dl:{view}:{iid}")
+            for idx, (iid, info) in enumerate(items, start=1)
         ]
         manage_btn = InlineKeyboardButton("🗑️ إدارة وحذف", callback_data=f"adm_manage:{view}:{page}")
         kb = build_paginated_keyboard(buttons, page, f"cat_{view}", [[add_btn, manage_btn], BACK_ROW])
@@ -238,24 +246,25 @@ async def render_view(query, view: str, page: int = 0) -> None:
 
 
 async def render_manage(query, view: str, page: int = 0, notice: str = "") -> None:
-    """وضع الإدارة: لكل عنصر زر حذف وزر نقل للأرشيف العام."""
-    items = collect_items(load_data(), view)
+    """وضع الإدارة: لكل عنصر زر حذف وزر نقل للقسم الآخر."""
+    items = sorted_items(load_data(), view)
+    prefix = notice + "\n\n" if notice else ""
     if not items:
-        text = (notice + "\n\n" if notice else "") + "⚠️ **لا توجد ملفات للإدارة.**"
-        await safe_edit_text(query, text, InlineKeyboardMarkup([[InlineKeyboardButton("✅ رجوع للقائمة", callback_data=f"cat_{view}:0")]]))
+        kb = InlineKeyboardMarkup([[InlineKeyboardButton("✅ رجوع للقائمة", callback_data=f"cat_{view}:0")]])
+        await safe_edit_text(query, prefix + "⚠️ **لا توجد ملفات للإدارة.**", kb)
         return
 
     pages = (len(items) + MANAGE_PER_PAGE - 1) // MANAGE_PER_PAGE
     page = max(0, min(page, pages - 1))
     start = page * MANAGE_PER_PAGE
-    can_move = view != "general_archive"
+    move_label = "📦 للأرشيف العام" if view == "archive" else "📤 للأرشيف"
 
     rows = []
-    for idx, (cat, iid, info) in enumerate(items[start:start + MANAGE_PER_PAGE], start=start + 1):
-        row = [InlineKeyboardButton(f"🗑️ {idx}. {one_line(item_title(info))[:22]}", callback_data=f"admx:del:{view}:{page}:{iid}")]
-        if can_move:
-            row.append(InlineKeyboardButton("📦 نقل", callback_data=f"admx:mv:{view}:{page}:{iid}"))
-        rows.append(row)
+    for idx, (iid, info) in enumerate(items[start:start + MANAGE_PER_PAGE], start=start + 1):
+        rows.append([
+            InlineKeyboardButton(f"🗑️ {idx}. {short(item_title(info), 20)}", callback_data=f"admx:del:{view}:{page}:{iid}"),
+            InlineKeyboardButton(move_label, callback_data=f"admx:mv:{view}:{page}:{iid}"),
+        ])
 
     nav = []
     if page > 0:
@@ -268,200 +277,193 @@ async def render_manage(query, view: str, page: int = 0, notice: str = "") -> No
         rows.append(nav)
     rows.append([InlineKeyboardButton("✅ تم، رجوع للقائمة", callback_data=f"cat_{view}:{page}")])
 
-    hint = "🗑️ للحذف" + (" • 📦 للنقل إلى الأرشيف العام" if can_move else "")
-    text = (notice + "\n\n" if notice else "") + f"🛠️ **إدارة {VIEW_TITLES[view]}**\n━━━━━━━ • ⚙️ • ━━━━━━━\n\n{hint}"
+    text = f"{prefix}🛠️ **إدارة {VIEWS[view]}**\n━━━━━━━ • ⚙️ • ━━━━━━━\n\n🗑️ للحذف • {move_label} للنقل"
     await safe_edit_text(query, text, InlineKeyboardMarkup(rows))
+
+
+async def _send_text(bot, chat_id: int, text: str) -> None:
+    try:
+        await bot.send_message(chat_id, text, parse_mode="Markdown")
+    except BadRequest:  # تنسيق Markdown غير صالح في نص المستخدم
+        await bot.send_message(chat_id, text)
 
 
 async def radio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query, data = update.callback_query, update.callback_query.data
     await query.answer()
 
-    if data == "radio_menu":
+    if data == MENU:
         await radio_menu(update, context)
 
     elif data == "about_info":
         await safe_edit_text(query, ABOUT_TEXT, BACK_RADIO)
 
-    elif data == "archive_menu":  # توافق مع الأزرار القديمة
-        await render_view(query, "archive", 0)
+    elif data.startswith("cat_"):  # cat_<view>:<page>
+        view, _, page = data[4:].partition(":")
+        await render_view(query, parse_view(view), parse_page(page))
 
-    elif data.startswith("cat_"):
-        # الصيغة: cat_<key>:<page> — أي مفتاح قديم (broadcasts/videos/...) يُحوَّل إلى الأرشيف الإذاعي
-        cat_key, _, page_str = data[len("cat_"):].partition(":")
-        await render_view(query, view_of(cat_key), _page(page_str))
-
-    elif data.startswith("dl:"):
-        _, cat_key, item_id = data.split(":", 2)
-        item = (load_data().get(cat_key) or {}).get(item_id)
+    elif data.startswith("dl:"):  # dl:<view>:<item_id>
+        _, view, iid = data.split(":", 2)
+        view = parse_view(view)
+        item = (load_data().get(view) or {}).get(iid)
         if not item:
             await safe_edit_text(query, "⚠️ لم يعد هذا المحتوى متاحًا.", BACK_RADIO)
             return
 
         await safe_edit_text(query, "⏳ **جاري جلب المحتوى...**")
         chat_id = query.message.chat_id
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text=f"📦 **المحتوى المطلوب:** {md_safe(item_title(item))}",
-            parse_mode="Markdown",
-        )
+        title = item_title(item)
+        await context.bot.send_message(chat_id, f"📦 **المحتوى المطلوب:** {md_safe(title)}", parse_mode="Markdown")
 
         failures = 0
         for f in item.get("files") or []:
-            t, fid, txt = f.get("type"), f.get("file_id"), f.get("text")
+            kind, fid, txt = f.get("type"), f.get("file_id"), f.get("text")
             try:
-                if t == "text":
-                    await context.bot.send_message(chat_id, txt, parse_mode="Markdown")
-                elif t == "video":
+                if kind == "text":
+                    if txt:
+                        await _send_text(context.bot, chat_id, txt)
+                elif kind == "video":
                     await context.bot.send_video(chat_id, fid)
-                elif t == "photo":
+                elif kind == "photo":
                     await context.bot.send_photo(chat_id, fid)
-                elif t == "audio":
+                elif kind == "audio":
                     await context.bot.send_audio(chat_id, fid)
                 else:
                     await context.bot.send_document(chat_id, fid)
             except TelegramError as e:
                 failures += 1
-                logger.warning("فشل إرسال ملف ضمن '%s': %s", item.get("title"), e)
+                logger.warning("فشل إرسال ملف ضمن '%s': %s", title, e)
             await asyncio.sleep(0.3)
 
         await safe_delete_msg(context, chat_id, query.message.message_id)
 
-        footer = f"✨ **تم إرسال المحتوى:**\n📌 **{md_safe(item_title(item))}**"
+        footer = f"✨ **تم إرسال المحتوى:**\n📌 **{md_safe(title)}**"
         if failures:
             footer += f"\n⚠️ تعذّر إرسال {failures} من العناصر (قد تكون محذوفة من تيليجرام)."
         nav = [[
-            InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"cat_{view_of(cat_key)}:0"),
-            InlineKeyboardButton("📻 قائمة الإذاعة", callback_data="radio_menu"),
+            InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"cat_{view}:0"),
+            InlineKeyboardButton("📻 قائمة الإذاعة", callback_data=MENU),
         ]]
         footer_msg = await context.bot.send_message(
-            chat_id=chat_id, text=footer, reply_markup=InlineKeyboardMarkup(nav), parse_mode="Markdown"
+            chat_id, footer, reply_markup=InlineKeyboardMarkup(nav), parse_mode="Markdown"
         )
         track_panel(context, footer_msg)
 
 
 # ----------------------------------------------------------------------------
-# الإضافة (محادثة) — تبدأ من زر «➕ إضافة محتوى جديد» في صفحة التصفح
+# الإضافة (محادثة) — تبدأ من زر «➕ إضافة محتوى جديد»
 # ----------------------------------------------------------------------------
-async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def _add_kb(done_text: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton(done_text, callback_data="adm_done_files")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data="adm_cancel")],
+    ])
+
+
+async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    view = query.data.split(":", 1)[1]
-    context.user_data["admin_origin"] = view
-    context.user_data["admin_target_cat"] = ADD_TARGET.get(view, "broadcasts")
-    context.user_data["admin_files_batch"] = []
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ اكتفيت، انتقل للعنوان", callback_data="adm_done_files")],
-        [InlineKeyboardButton("❌ إلغاء", callback_data="adm_cancel")],
-    ])
+    view = parse_view(query.data.split(":", 1)[1])
+    context.user_data["adm_view"] = view
+    context.user_data["adm_batch"] = []
     await safe_edit_text(
         query,
-        f"📥 **الإضافة إلى {VIEW_TITLES.get(view, '')}**\n\nأرسل الملفات أو النصوص الآن (حد أقصى {MAX_BATCH_FILES}):",
-        kb,
+        f"📥 **الإضافة إلى {VIEWS[view]}**\n\nأرسل الملفات أو النصوص الآن (حد أقصى {MAX_BATCH_FILES}):",
+        _add_kb("✅ اكتفيت، انتقل للعنوان"),
     )
-    return ADMIN_WAITING_FILES
+    return WAITING_FILES
 
 
-async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    batch = context.user_data.get("admin_files_batch", [])
+async def add_receive(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    batch = context.user_data.setdefault("adm_batch", [])
     if len(batch) >= MAX_BATCH_FILES:
-        await update.message.reply_text("⚠️ وصلت للحد الأقصى!")
-        return ADMIN_WAITING_FILES
+        await update.message.reply_text("⚠️ وصلت للحد الأقصى! اضغط «انتقل للعنوان».")
+        return WAITING_FILES
 
     msg = update.message
-    fid, ftype, txt = None, "document", None
+    fid, kind, txt = None, "document", None
     if msg.document:
-        fid, ftype = msg.document.file_id, "document"
+        fid, kind = msg.document.file_id, "document"
     elif msg.video:
-        fid, ftype = msg.video.file_id, "video"
+        fid, kind = msg.video.file_id, "video"
     elif msg.photo:
-        fid, ftype = msg.photo[-1].file_id, "photo"
+        fid, kind = msg.photo[-1].file_id, "photo"
     elif msg.audio or msg.voice:
-        fid, ftype = (msg.audio or msg.voice).file_id, "audio"
+        fid, kind = (msg.audio or msg.voice).file_id, "audio"
     elif msg.text:
-        txt, ftype = msg.text, "text"
+        txt, kind = msg.text, "text"
     else:
         await msg.reply_text("⚠️ نوع الملف غير مدعوم، أرسل نصًا أو صورة أو فيديو أو صوت أو مستند.")
-        return ADMIN_WAITING_FILES
+        return WAITING_FILES
 
     await drop_old_panel(context)  # الواجهة السابقة (شاشة الإضافة أو رسالة الاستلام السابقة)
+    batch.append({"file_id": fid, "type": kind, "text": txt})
 
-    batch.append({"file_id": fid, "type": ftype, "text": txt})
-    context.user_data["admin_files_batch"] = batch
-
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ اكتفيت بالمحتوى، انتقل لتحديد العنوان", callback_data="adm_done_files")],
-        [InlineKeyboardButton("❌ إلغاء", callback_data="adm_cancel")],
-    ])
     new_msg = await msg.reply_text(
         f"📥 **تم استلام المادة ({len(batch)}/{MAX_BATCH_FILES})!** أرسل التالية أو اضغط الزر:",
-        reply_markup=kb,
+        reply_markup=_add_kb("✅ اكتفيت بالمحتوى، انتقل لتحديد العنوان"),
         parse_mode="Markdown",
     )
     track_panel(context, new_msg)
-    return ADMIN_WAITING_FILES
+    return WAITING_FILES
 
 
-async def admin_finish_files_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_ask_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ إلغاء", callback_data="adm_cancel")]])
 
-    if not context.user_data.get("admin_files_batch"):
-        await safe_edit_text(query, "❌ لم ترسل أي مواد!", cancel_kb)
-        return ADMIN_WAITING_FILES
+    if not context.user_data.get("adm_batch"):
+        await safe_edit_text(query, "❌ لم ترسل أي مواد! أرسل ملفًا أو نصًا أولًا.", cancel_kb)
+        return WAITING_FILES
 
     await safe_edit_text(query, "✍️ أرسل الآن **الاسم/العنوان الظاهر للمجموعة**:", cancel_kb)
-    return ADMIN_WAITING_TITLE
+    return WAITING_TITLE
 
 
-async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     title = update.message.text.strip()
     await safe_delete_msg(context, chat_id, update.message.message_id)
 
     if not title:
         await context.bot.send_message(chat_id, "⚠️ العنوان لا يمكن أن يكون فارغًا، أعد المحاولة:")
-        return ADMIN_WAITING_TITLE
+        return WAITING_TITLE
 
-    target_cat = context.user_data.get("admin_target_cat")
-    batch = context.user_data.get("admin_files_batch")
-    origin = context.user_data.get("admin_origin", "archive")
-    if not target_cat or not batch:
-        await context.bot.send_message(chat_id, "❌ حدث خطأ: انتهت الجلسة. ابدأ من جديد عبر /start.")
+    view = context.user_data.get("adm_view")
+    batch = context.user_data.get("adm_batch")
+    if view not in VIEWS or not batch:
+        await context.bot.send_message(chat_id, "❌ انتهت الجلسة. ابدأ من جديد عبر /start.")
         context.user_data.clear()
         return ConversationHandler.END
 
     db = load_data()
-    db.setdefault(target_cat, {})[new_item_id()] = {"title": title, "files": batch}
+    db[view][new_item_id()] = {"title": title, "files": batch}
     save_data(db)
-    _sync_async(context)
+    sync(context, f"➕ إضافة «{short(title)}» إلى {VIEW_NAMES[view]} ({len(batch)} ملف)")
     context.user_data.clear()
 
     await drop_old_panel(context)  # شاشة طلب العنوان
-    done_msg = await context.bot.send_message(
+    done = await context.bot.send_message(
         chat_id,
-        f"🎉 **تمت الإضافة بنجاح!**\n📌 **العنوان:** `{title}`",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📂 عودة للقائمة", callback_data=f"cat_{origin}:0")]]),
+        f"🎉 **تمت الإضافة بنجاح!**\n📌 **العنوان:** {md_safe(title)}",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📂 عودة للقائمة", callback_data=f"cat_{view}:0")]]),
         parse_mode="Markdown",
     )
-    track_panel(context, done_msg)
+    track_panel(context, done)
     return ConversationHandler.END
 
 
-async def admin_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """إلغاء الإضافة والرجوع لنفس صفحة التصفح التي بدأ منها المالك."""
+async def add_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    origin = context.user_data.get("admin_origin", "archive")
+    view = parse_view(context.user_data.get("adm_view", "archive"))
     context.user_data.clear()
-    await render_view(query, origin, 0)
+    await render_view(query, view, 0)
     return ConversationHandler.END
 
 
-async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚫 **تم الإلغاء.**", parse_mode="Markdown")
     context.user_data.clear()
     return ConversationHandler.END
@@ -482,28 +484,28 @@ async def stale_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ----------------------------------------------------------------------------
-# الإدارة المباشرة (حذف / نقل للأرشيف العام) من صفحة التصفح
+# الإدارة المباشرة (حذف / نقل)
 # ----------------------------------------------------------------------------
 async def manage_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """adm_manage:<view>:<page>  |  admx:<op>:<view>:<page>:<item_id>  (op = del / ydel / mv)"""
+    """adm_manage:<view>:<page>  |  admx:<op>:<view>:<page>:<item_id>   (op = del / ydel / mv)"""
     query, data = update.callback_query, update.callback_query.data
     await query.answer()
 
     if data.startswith("adm_manage:"):
         _, view, page = data.split(":", 2)
-        await render_manage(query, view_of(view), _page(page))
+        await render_manage(query, parse_view(view), parse_page(page))
         return
 
     _, op, view, page, iid = data.split(":", 4)
-    view, page = view_of(view), _page(page)
+    view, page = parse_view(view), parse_page(page)
     db = load_data()
-    cat = find_item_cat(db, view, iid)
-    if cat is None:
+    info = db[view].get(iid)
+    if info is None:
         await render_manage(query, view, page, notice="⚠️ هذا العنصر لم يعد موجودًا.")
         return
 
-    title = item_title(db[cat][iid])
-    safe_title = md_safe(title)
+    title = item_title(info)
+    safe_title = md_safe(short(title, 60))
 
     if op == "del":  # شاشة تأكيد قبل الحذف النهائي
         kb = InlineKeyboardMarkup([[
@@ -513,19 +515,17 @@ async def manage_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await safe_edit_text(query, f"⚠️ **تأكيد الحذف**\n\nهل تريد حذف «{safe_title}» نهائيًا؟", kb)
 
     elif op == "ydel":
-        del db[cat][iid]
+        del db[view][iid]
         save_data(db)
-        _sync_async(context)
+        sync(context, f"🗑️ حذف «{short(title)}» من {VIEW_NAMES[view]}")
         await render_manage(query, view, page, notice=f"🗑️ **تم حذف:** {safe_title}")
 
     elif op == "mv":
-        if cat == "general_archive":
-            await render_manage(query, view, page, notice="ℹ️ العنصر موجود في الأرشيف العام أصلًا.")
-            return
-        db.setdefault("general_archive", {})[iid] = db[cat].pop(iid)
+        dst = "general_archive" if view == "archive" else "archive"
+        db[dst][iid] = db[view].pop(iid)
         save_data(db)
-        _sync_async(context)
-        await render_manage(query, view, page, notice=f"📦 **تم النقل للأرشيف العام:** {safe_title}")
+        sync(context, f"📦 نقل «{short(title)}» من {VIEW_NAMES[view]} إلى {VIEW_NAMES[dst]}")
+        await render_manage(query, view, page, notice=f"📦 **تم النقل إلى {VIEW_NAMES[dst]}:** {safe_title}")
 
 
 # ----------------------------------------------------------------------------
@@ -533,28 +533,26 @@ async def manage_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ----------------------------------------------------------------------------
 def register(app) -> None:
     add_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(admin_add_start, pattern=r"^adm_add:(archive|general_archive)$")],
+        entry_points=[CallbackQueryHandler(add_start, pattern=r"^adm_add:(archive|general_archive)$")],
         states={
-            ADMIN_WAITING_FILES: [
+            WAITING_FILES: [
                 MessageHandler(
                     (filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.TEXT)
                     & ~filters.COMMAND,
-                    admin_receive_files_step,
+                    add_receive,
                 ),
-                CallbackQueryHandler(admin_finish_files_step, pattern="^adm_done_files$"),
+                CallbackQueryHandler(add_ask_title, pattern="^adm_done_files$"),
             ],
-            ADMIN_WAITING_TITLE: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_save_file_step),
-            ],
+            WAITING_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_save)],
         },
         fallbacks=[
-            CommandHandler("cancel", cancel_conv),
+            CommandHandler("cancel", add_cancel_cmd),
             CommandHandler("start", end_on_start),
-            CallbackQueryHandler(admin_cancel, pattern="^adm_cancel$"),
+            CallbackQueryHandler(add_cancel, pattern="^adm_cancel$"),
         ],
         per_user=True,
     )
     app.add_handler(add_conv)
     app.add_handler(CallbackQueryHandler(stale_session, pattern=r"^adm_(done_files|cancel)$"))
     app.add_handler(CallbackQueryHandler(manage_handler, pattern=r"^(adm_manage:|admx:)"))
-    app.add_handler(CallbackQueryHandler(radio_handler, pattern=r"^(radio_menu|archive_menu|about_info|cat_|dl:)"))
+    app.add_handler(CallbackQueryHandler(radio_handler, pattern=r"^(radio_menu|about_info|cat_|dl:)"))

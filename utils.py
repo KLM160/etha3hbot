@@ -1,15 +1,18 @@
-"""🧰 أدوات مساعدة مشتركة بين كل الأقسام."""
+"""🧰 أدوات مشتركة: تيليجرام، ملفات json، شاشة التحكم الفعّالة، ومزامنة GitHub."""
+import base64
 import json
 import logging
 import os
 import threading
-from typing import Any, Optional
+import time
+from typing import Any, Optional, Tuple
 
+import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest, TelegramError
-from telegram.ext import ContextTypes
+from telegram.ext import CallbackQueryHandler, ContextTypes
 
-from config import DATA_DIR, ITEMS_PER_PAGE
+from config import DATA_DIR, GH_BRANCH, GH_REPO, GH_TOKEN, ITEMS_PER_PAGE
 
 logger = logging.getLogger("bot.utils")
 _JSON_LOCK = threading.Lock()
@@ -24,15 +27,31 @@ async def safe_delete_msg(context: ContextTypes.DEFAULT_TYPE, chat_id: int, msg_
 
 
 async def safe_edit_text(query, text: str, reply_markup: Optional[InlineKeyboardMarkup] = None) -> None:
+    """يعدّل الرسالة بـ Markdown، وإن رفض تيليجرام التنسيق يعيد المحاولة نصًا عاديًا."""
     try:
         await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
     except BadRequest as e:
-        if "not modified" not in str(e).lower():
-            logger.warning("BadRequest عند تعديل رسالة: %s", e)
+        err = str(e).lower()
+        if "not modified" in err:
+            return
+        if "parse entities" in err:
+            try:
+                await query.edit_message_text(text, reply_markup=reply_markup)
+            except BadRequest as e2:
+                if "not modified" not in str(e2).lower():
+                    logger.warning("BadRequest عند تعديل رسالة: %s", e2)
+            return
+        logger.warning("BadRequest عند تعديل رسالة: %s", e)
 
 
-def grid(buttons: list[InlineKeyboardButton], cols: int = 2) -> list[list[InlineKeyboardButton]]:
-    """يقسّم الأزرار صفوفًا (افتراضيًا ثنائي)."""
+def md_safe(text: str) -> str:
+    """يحذف رموز Markdown التي تكسر الرسالة (للعناوين داخل النصوص)."""
+    for ch in "*_`[":
+        text = text.replace(ch, "")
+    return text
+
+
+def grid(buttons: list, cols: int = 2) -> list:
     return [buttons[i:i + cols] for i in range(0, len(buttons), cols)]
 
 
@@ -40,26 +59,12 @@ def home_button() -> InlineKeyboardButton:
     return InlineKeyboardButton("🏠 الرئيسية", callback_data="main")
 
 
-async def show_placeholder(query, title: str) -> None:
-    """شاشة مؤقتة للأقسام التي لم تُبنَ بعد."""
-    await safe_edit_text(
-        query,
-        f"**{title}**\n━━━━━━━ • ✨ • ━━━━━━━\n\n🚧 هذا القسم قيد البناء، قريبًا بإذن الله.",
-        InlineKeyboardMarkup([[home_button()]]),
-    )
-
-
-def build_paginated_keyboard(
-    items: list[tuple[str, InlineKeyboardButton]],
-    page: int,
-    page_prefix: str,
-    extra_rows: Optional[list[list[InlineKeyboardButton]]] = None,
-) -> InlineKeyboardMarkup:
-    """يبني كيبورد مقسّم على صفحات من قائمة (id, button)."""
-    total_pages = max(1, (len(items) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+def build_paginated_keyboard(buttons: list, page: int, page_prefix: str, extra_rows: Optional[list] = None) -> InlineKeyboardMarkup:
+    """كيبورد مقسّم على صفحات من قائمة أزرار؛ أزرار التنقل تستدعي f"{page_prefix}:{رقم_الصفحة}"."""
+    total_pages = max(1, (len(buttons) + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
     page = max(0, min(page, total_pages - 1))
     start = page * ITEMS_PER_PAGE
-    rows = [[btn] for _, btn in items[start:start + ITEMS_PER_PAGE]]
+    rows = [[b] for b in buttons[start:start + ITEMS_PER_PAGE]]
 
     if total_pages > 1:
         nav = []
@@ -70,9 +75,22 @@ def build_paginated_keyboard(
             nav.append(InlineKeyboardButton("التالي ▶️", callback_data=f"{page_prefix}:{page + 1}"))
         rows.append(nav)
 
-    if extra_rows:
-        rows.extend(r for r in extra_rows if r)
+    rows.extend(r for r in (extra_rows or []) if r)
     return InlineKeyboardMarkup(rows)
+
+
+def register_placeholder(app, menu: str, title: str) -> None:
+    """يسجّل شاشة «قيد البناء» لقسم لم يُبنَ بعد (يُستبدل ببناء القسم الفعلي لاحقًا)."""
+    async def _menu(update, context):
+        q = update.callback_query
+        await q.answer()
+        await safe_edit_text(
+            q,
+            f"**{title}**\n━━━━━━━ • ✨ • ━━━━━━━\n\n🚧 هذا القسم قيد البناء، قريبًا بإذن الله.",
+            InlineKeyboardMarkup([[home_button()]]),
+        )
+
+    app.add_handler(CallbackQueryHandler(_menu, pattern=f"^{menu}$"))
 
 
 # ------------------------ ملفات json للأقسام ------------------------
@@ -85,7 +103,7 @@ def load_json(filename: str, default: Any) -> Any:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error("JSON Error عند قراءة %s: %s", path, e)
             return json.loads(json.dumps(default))
 
@@ -114,19 +132,17 @@ def track_panel(context: ContextTypes.DEFAULT_TYPE, message) -> None:
 
 
 async def drop_old_panel(context: ContextTypes.DEFAULT_TYPE) -> None:
-    """يحذف شاشة التحكم المحفوظة بصمت ويمسح المفتاح؛ لا يرمي استثناءً أبداً."""
+    """يحذف شاشة التحكم المحفوظة بصمت؛ لا يرمي استثناءً أبداً."""
     try:
         saved = context.application.bot_data.pop(PANEL_KEY, None)
         if saved:
-            chat_id, msg_id = saved
-            await safe_delete_msg(context, chat_id, msg_id)
+            await safe_delete_msg(context, saved[0], saved[1])
     except Exception as e:  # noqa: BLE001
         logger.debug("تعذّر حذف الشاشة القديمة: %s", e)
 
 
 def claim_panel(context: ContextTypes.DEFAULT_TYPE, message) -> bool:
-    """هل هذه الرسالة هي الواجهة الفعّالة؟
-    إن لم تكن هناك واجهة مسجّلة (مثلاً بعد إعادة تشغيل البوت) تصبح هذه الرسالة هي الفعّالة."""
+    """هل هذه الرسالة هي الواجهة الفعّالة؟ (إن لم تُسجَّل واجهة بعد إعادة التشغيل تصبح هذه هي الفعّالة)."""
     try:
         current = (message.chat.id, message.message_id)
     except AttributeError:
@@ -136,3 +152,111 @@ def claim_panel(context: ContextTypes.DEFAULT_TYPE, message) -> bool:
         context.application.bot_data[PANEL_KEY] = current
         return True
     return tuple(saved) == current
+
+
+# ------------------------ مزامنة GitHub ------------------------
+# قرص Render مؤقت: نرفع كل تعديل إلى GitHub، ونجلب آخر نسخة عند بدء التشغيل.
+_API = "https://api.github.com"
+_PUSH_LOCK = threading.Lock()  # رفع واحد في كل مرة (يتفادى تعارض sha)
+
+
+def github_enabled() -> bool:
+    return bool(GH_TOKEN and GH_REPO)
+
+
+def _gh_headers(raw: bool = False) -> dict:
+    return {
+        "Authorization": f"Bearer {GH_TOKEN}",
+        "Accept": "application/vnd.github.raw+json" if raw else "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def _gh_url(repo_path: str) -> str:
+    return f"{_API}/repos/{GH_REPO}/contents/{repo_path.lstrip('/')}"
+
+
+def _gh_params() -> dict:
+    return {"ref": GH_BRANCH} if GH_BRANCH else {}
+
+
+def _gh_error(res: requests.Response) -> str:
+    try:
+        detail = res.json().get("message", "")
+    except Exception:  # noqa: BLE001
+        detail = res.text[:200]
+    hints = {
+        401: "التوكن غير صالح أو منتهي (GH_TOKEN).",
+        403: "التوكن بلا صلاحية كتابة (يلزم Contents: Read and write) أو تجاوزت الحد.",
+        404: "المستودع/الملف/الفرع غير موجود أو التوكن لا يراه (راجع GH_REPO و GH_BRANCH و GH_DATA_PATH).",
+        409: "تعارض في النسخة.",
+        422: "رفض GitHub الطلب (غالبًا الفرع أو sha).",
+    }
+    return f"HTTP {res.status_code} — {hints.get(res.status_code, '')} [{detail}]"
+
+
+def github_pull(repo_path: str) -> Optional[bytes]:
+    """يجلب محتوى ملف من GitHub، أو None إن لم يوجد/فشل."""
+    if not github_enabled():
+        return None
+    try:
+        res = requests.get(_gh_url(repo_path), headers=_gh_headers(raw=True), params=_gh_params(), timeout=20)
+    except requests.RequestException as e:
+        logger.error("تعذّر الاتصال بـ GitHub عند الجلب: %s", e)
+        return None
+    if res.status_code == 200:
+        return res.content
+    logger.error("فشل جلب %s من GitHub: %s", repo_path, _gh_error(res))
+    return None
+
+
+def github_push(local_path: str, repo_path: str, message: str) -> Tuple[bool, str]:
+    """يرفع ملفًا محليًا إلى GitHub برسالة commit محددة. يرجع (نجح؟، رسالة)."""
+    if not github_enabled():
+        return False, "GH_TOKEN أو GH_REPO غير مضبوطين في متغيرات البيئة."
+
+    with _PUSH_LOCK:
+        last = "فشل غير معروف"
+        for attempt in range(4):
+            try:
+                with open(local_path, "rb") as f:  # آخر نسخة في كل محاولة
+                    content = base64.b64encode(f.read()).decode()
+
+                get_res = requests.get(_gh_url(repo_path), headers=_gh_headers(), params=_gh_params(), timeout=20)
+                if get_res.status_code == 200:
+                    sha = get_res.json().get("sha")
+                elif get_res.status_code == 404:
+                    sha = None  # ملف جديد
+                else:
+                    last = f"عند قراءة الملف: {_gh_error(get_res)}"
+                    logger.error("GitHub: %s", last)
+                    return False, last
+
+                payload = {"message": message, "content": content}
+                if sha:
+                    payload["sha"] = sha
+                if GH_BRANCH:
+                    payload["branch"] = GH_BRANCH
+
+                put_res = requests.put(_gh_url(repo_path), headers=_gh_headers(), json=payload, timeout=30)
+                if put_res.status_code in (200, 201):
+                    logger.info("✅ GitHub: %s", message)
+                    return True, "ok"
+
+                last = f"عند الرفع: {_gh_error(put_res)}"
+                if put_res.status_code in (409, 422) and attempt < 3:
+                    time.sleep(1 + attempt)
+                    continue
+                logger.error("GitHub: %s", last)
+                return False, last
+            except requests.RequestException as e:
+                last = f"خطأ شبكة: {e}"
+                logger.error("GitHub: %s", last)
+                if attempt < 3:
+                    time.sleep(2)
+                    continue
+                return False, last
+            except Exception as e:  # noqa: BLE001
+                logger.exception("GitHub خطأ غير متوقع")
+                return False, f"خطأ غير متوقع: {e}"
+        return False, last

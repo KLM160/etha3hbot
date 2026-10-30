@@ -1,15 +1,16 @@
-"""⚙️ الإعدادات المشتركة لكل أقسام البوت."""
+"""⚙️ الإعدادات المشتركة لكل أقسام البوت (كلها من متغيرات البيئة في Render)."""
 import os
 
 TOKEN = os.environ.get("TOKEN")
 if not TOKEN:
     raise ValueError("❌ خطأ: لم يتم العثور على التوكن! تأكد من ضبط متغير البيئة TOKEN.")
 
+# ---- GitHub: حفظ بيانات البوت دائمًا (قرص Render مؤقت) ----
 GH_TOKEN = (os.environ.get("GH_TOKEN") or "").strip() or None
 
 
 def _clean_repo(value):
-    """يقبل owner/repo أو رابط المستودع الكامل ويحوّله إلى owner/repo."""
+    """يقبل owner/repo أو رابط المستودع الكامل."""
     value = (value or "").strip()
     for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
         if value.startswith(prefix):
@@ -20,15 +21,13 @@ def _clean_repo(value):
     return value or None
 
 
-GH_REPO = _clean_repo(os.environ.get("GH_REPO"))
-# الفرع الذي ينشر منه Render (اتركه فارغًا لاستخدام الفرع الافتراضي)
-GH_BRANCH = (os.environ.get("GH_BRANCH") or "").strip() or None
-# مسار data.json داخل المستودع (غيّره إذا كان الملف داخل مجلد، مثل bot/data.json)
-GH_DATA_PATH = (os.environ.get("GH_DATA_PATH") or "data.json").strip().lstrip("/")
+GH_REPO = _clean_repo(os.environ.get("GH_REPO"))                      # owner/repo
+GH_BRANCH = (os.environ.get("GH_BRANCH") or "").strip() or None       # فارغ = الفرع الافتراضي
+GH_DATA_PATH = (os.environ.get("GH_DATA_PATH") or "data.json").strip().lstrip("/")  # مسار data.json في المستودع
 
 # 🔒 البوت خاص بالمالك فقط
 ALLOWED_USER_ID = 8912887919
 OWNER_NAME = "حامد"
 
 ITEMS_PER_PAGE = 8  # عدد الأزرار في كل صفحة من القوائم
-DATA_DIR = "data"   # مجلد ملفات json الخاصة بالأقسام الجديدة (الإذاعة تبقى على data.json)
+DATA_DIR = "data"   # ملفات json للأقسام الجديدة (الإذاعة تستخدم data.json في الجذر)
