@@ -1,7 +1,5 @@
 {
-    "broadcasts": {},
-    "videos": {},
-    "dialogues": {
+    "archive": {
         "item_1790998782_8daee471": {
             "title": "وقفة تأمل",
             "files": [
@@ -18,7 +16,6 @@
             ]
         }
     },
-    "quizzes": {},
     "general_archive": {
         "item_1788610686": {
             "title": "( وما أوتيتم من العلم إلا قليلا )\nإذاعة يوم الثلاثاء , الأسبوع الثالث",
