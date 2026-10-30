@@ -7,7 +7,6 @@
 نقطة الربط الوحيدة مع main.py: TITLE و MENU ودالة register(app).
 """
 import asyncio
-import base64
 import json
 import logging
 import os
@@ -15,7 +14,6 @@ import threading
 import time
 import uuid
 
-import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
 from telegram.ext import (
@@ -27,7 +25,8 @@ from telegram.ext import (
     filters,
 )
 
-from config import GH_REPO, GH_TOKEN
+import github_sync
+from config import ALLOWED_USER_ID, GH_DATA_PATH
 from utils import build_paginated_keyboard, grid, home_button, safe_delete_msg, safe_edit_text, drop_old_panel, track_panel
 
 logger = logging.getLogger("bot.radio")
@@ -99,41 +98,32 @@ def new_item_id() -> str:
     return f"item_{int(time.time())}_{uuid.uuid4().hex[:8]}"
 
 
-def sync_to_github() -> None:
-    """يرفع data.json إلى GitHub. كل دفعة تقرأ آخر نسخة من الملف، وتُعاد المحاولة عند تعارض sha.
-    وسم [skip render] في الرسالة يمنع Render من إعادة تشغيل البوت مع كل تعديل (سبب ظهور واجهتين)."""
-    if not (GH_TOKEN and GH_REPO):
+def sync_to_github() -> tuple:
+    """يرفع data.json إلى GitHub ويرجع (نجح؟، رسالة).
+    وسم [skip render] في الرسالة يمنع Render من إعادة نشر البوت مع كل تعديل."""
+    return github_sync.push_file(DATA_PATH, GH_DATA_PATH, "🔄 التحديث التلقائي للأرشيف [skip render]")
+
+
+def restore_from_github() -> None:
+    """عند بدء التشغيل: يجلب آخر data.json من GitHub ويستبدل النسخة المحلية.
+    (قرص Render مؤقت، ونسخة النشر قد تكون أقدم من آخر تعديل — هذا سبب رجوع المحذوفات.)"""
+    if not github_sync.enabled():
+        logger.warning("⚠️ GH_TOKEN/GH_REPO غير مضبوطين: لن تُحفظ تعديلات الأرشيف بعد إعادة التشغيل!")
         return
-    url = f"https://api.github.com/repos/{GH_REPO}/contents/{DATA_FILE}"
-    headers = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    with SYNC_LOCK:
-        for attempt in range(3):
-            try:
-                with DATA_LOCK:
-                    with open(DATA_PATH, "rb") as f:
-                        content = base64.b64encode(f.read()).decode()
-
-                get_res = requests.get(url, headers=headers, timeout=15)
-                sha = get_res.json().get("sha") if get_res.status_code == 200 else None
-
-                payload = {"message": "🔄 التحديث التلقائي للأرشيف [skip render]", "content": content}
-                if sha:
-                    payload["sha"] = sha
-
-                put_res = requests.put(url, headers=headers, json=payload, timeout=15)
-                if put_res.status_code in (200, 201):
-                    logger.info("✅ تمت مزامنة الأرشيف مع GitHub بنجاح.")
-                    return
-                if put_res.status_code in (409, 422) and attempt < 2:
-                    continue  # sha قديم: أعد القراءة وحاول ثانية
-                logger.error("فشلت مزامنة GitHub (status=%s): %s", put_res.status_code, put_res.text[:500])
-                return
-            except requests.RequestException as e:
-                logger.error("GitHub Network Error: %s", e)
-                return
-            except Exception as e:
-                logger.error("GitHub Error غير متوقع: %s", e)
-                return
+    raw = github_sync.pull_file(GH_DATA_PATH)
+    if raw is None:
+        logger.warning("لم يتم جلب data.json من GitHub، سيُستخدم الملف المحلي.")
+        return
+    try:
+        remote = json.loads(raw.decode("utf-8"))
+        if not isinstance(remote, dict):
+            raise ValueError("بنية غير متوقعة")
+    except Exception as e:  # noqa: BLE001
+        logger.error("data.json في GitHub غير صالح، سيُستخدم الملف المحلي: %s", e)
+        return
+    with DATA_LOCK:
+        _save_data_locked(remote)
+    logger.info("✅ تم تحميل أحدث أرشيف من GitHub.")
 
 
 def view_of(cat_key: str) -> str:
@@ -185,8 +175,21 @@ def _page(value) -> int:
     return int(value) if str(value).isdigit() else 0
 
 
-def _sync_async() -> None:
-    task = asyncio.create_task(asyncio.to_thread(sync_to_github))
+async def _sync_and_report(context) -> None:
+    ok, msg = await asyncio.to_thread(sync_to_github)
+    if ok:
+        return
+    try:  # تنبيه صريح للمالك بدل الفشل الصامت
+        await context.bot.send_message(
+            ALLOWED_USER_ID,
+            f"⚠️ تم الحفظ محليًا لكن فشلت المزامنة مع GitHub، وقد يرجع التعديل بعد إعادة التشغيل.\n\nالسبب: {msg}",
+        )
+    except TelegramError:
+        pass
+
+
+def _sync_async(context) -> None:
+    task = asyncio.create_task(_sync_and_report(context))
     _BG_TASKS.add(task)
     task.add_done_callback(_BG_TASKS.discard)
 
@@ -434,7 +437,7 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
     db = load_data()
     db.setdefault(target_cat, {})[new_item_id()] = {"title": title, "files": batch}
     save_data(db)
-    _sync_async()
+    _sync_async(context)
     context.user_data.clear()
 
     await drop_old_panel(context)  # شاشة طلب العنوان
@@ -512,7 +515,7 @@ async def manage_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif op == "ydel":
         del db[cat][iid]
         save_data(db)
-        _sync_async()
+        _sync_async(context)
         await render_manage(query, view, page, notice=f"🗑️ **تم حذف:** {safe_title}")
 
     elif op == "mv":
@@ -521,7 +524,7 @@ async def manage_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         db.setdefault("general_archive", {})[iid] = db[cat].pop(iid)
         save_data(db)
-        _sync_async()
+        _sync_async(context)
         await render_manage(query, view, page, notice=f"📦 **تم النقل للأرشيف العام:** {safe_title}")
 
 

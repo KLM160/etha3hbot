@@ -7,6 +7,7 @@ main.py : نقطة التشغيل + القائمة الرئيسية + حارس �
 ويحتوي: TITLE و MENU ودالة register(app).
 لإضافة قسم جديد: أنشئ ملفه ثم أضفه إلى قائمة SECTIONS أدناه.
 """
+import asyncio
 import logging
 import os
 import random
@@ -123,7 +124,8 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def post_init(app) -> None:
-    """يضبط أوامر البوت ونصوص ملفه الشخصي في تيليجرام عند كل تشغيل."""
+    """يجلب أحدث أرشيف من GitHub، ثم يضبط أوامر البوت ونصوص ملفه الشخصي عند كل تشغيل."""
+    await asyncio.to_thread(radio.restore_from_github)  # 🔄 قرص Render مؤقت: نعتمد GitHub كمصدر أصلي
     try:
         # يمسح أوامر النطاق الافتراضي فقط (فلا تظهر أوامر لغير المالك)؛
         # أما أوامر شات المالك (ومنها /admin القديم) فتُستبدل بالسطر التالي.
