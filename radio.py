@@ -1,8 +1,9 @@
 """
-📻 الإذاعة المدرسية — أرشيف إذاعة ابن حميد (القسم الأول من اللوحة)
+📻 الإذاعة المدرسية — أرشيف إذاعة ابن حميد
 --------------------------------------------------
-يحتفظ بنفس بيانات الأرشيف السابق (data.json) ونفس منطقه،
-وبدون كلمة سر للإدارة لأن البوت مغلق على المالك بالكامل (انظر owner_guard في main.py).
+- يحتفظ بنفس بيانات الأرشيف (data.json) ونفس منطقه.
+- الأرشيف الإذاعي يعرض الملفات مباشرة (بدون أقسام فرعية) مع صفحات.
+- الإضافة والحذف والنقل تتم من نفس صفحة التصفح (البوت مغلق على المالك: owner_guard في main.py).
 نقطة الربط الوحيدة مع main.py: TITLE و MENU ودالة register(app).
 """
 import asyncio
@@ -39,8 +40,9 @@ MENU = "radio_menu"
 
 DATA_FILE = "data.json"
 MAX_BATCH_FILES = 10
+MANAGE_PER_PAGE = 5
 
-ADMIN_SELECT_CAT, ADMIN_WAITING_FILES, ADMIN_WAITING_TITLE = range(3)
+ADMIN_WAITING_FILES, ADMIN_WAITING_TITLE = range(2)
 
 ABOUT_TEXT = (
     "🎙️ **عن أرشيف إذاعة ابن حميد | HR Bot**\n"
@@ -50,14 +52,13 @@ ABOUT_TEXT = (
     "💻 **التطوير والبرمجة:** AboZaid"
 )
 
+# مفاتيح data.json القديمة محفوظة كما هي (للحفاظ على البيانات الحالية)
 DEFAULT_DATA = {"broadcasts": {}, "videos": {}, "dialogues": {}, "quizzes": {}, "general_archive": {}}
-CAT_NAMES = {
-    "broadcasts": "🎙️ قسم الإذاعات",
-    "videos": "📺 قسم المقاطع المرئية",
-    "dialogues": "🎧 قسم الحوارات الإذاعية",
-    "quizzes": "🎁 قسم الأسئلة الإذاعية",
-    "general_archive": "🗄️ الأرشيف العام",
-}
+
+# "الأرشيف الإذاعي" عرض موحّد يجمع الأقسام القديمة في قائمة واحدة
+ARCHIVE_SOURCES = ("broadcasts", "videos", "dialogues", "quizzes")
+ADD_TARGET = {"archive": "broadcasts", "general_archive": "general_archive"}  # أين تُحفظ الإضافات الجديدة
+VIEW_TITLES = {"archive": "📁 الأرشيف الإذاعي", "general_archive": "🗄️ الأرشيف العام"}
 
 DATA_LOCK = threading.Lock()
 
@@ -123,18 +124,50 @@ def sync_to_github() -> None:
         logger.error("GitHub Error غير متوقع: %s", e)
 
 
+def view_of(cat_key: str) -> str:
+    """يحوّل أي مفتاح قسم (قديم أو جديد) إلى العرض المناسب: archive أو general_archive."""
+    return "general_archive" if cat_key == "general_archive" else "archive"
+
+
+def collect_items(db: dict, view: str) -> list:
+    """قائمة مسطّحة [(cat_key, item_id, info)] للعرض المطلوب."""
+    keys = ("general_archive",) if view == "general_archive" else ARCHIVE_SOURCES
+    return [(k, iid, info) for k in keys for iid, info in db.get(k, {}).items()]
+
+
+def find_item_cat(db: dict, view: str, iid: str):
+    for cat, i, _ in collect_items(db, view):
+        if i == iid:
+            return cat
+    return None
+
+
+def md_safe(text: str) -> str:
+    for ch in "*_`[":
+        text = text.replace(ch, "")
+    return text
+
+
+def _page(value) -> int:
+    return int(value) if str(value).isdigit() else 0
+
+
+def _sync_async() -> None:
+    asyncio.create_task(asyncio.to_thread(sync_to_github))
+
+
 # ----------------------------------------------------------------------------
-# واجهة الأرشيف
+# واجهة التصفح
 # ----------------------------------------------------------------------------
 BACK_RADIO = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 قائمة الإذاعة", callback_data="radio_menu")]])
+BACK_ROW = [InlineKeyboardButton("🔙 قائمة الإذاعة", callback_data="radio_menu")]
 
 
 async def radio_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup(
         grid([
-            InlineKeyboardButton("📁 الأرشيف الإذاعي", callback_data="archive_menu"),
-            InlineKeyboardButton("🗄️ الأرشيف العام", callback_data="cat_general_archive:0"),
-            InlineKeyboardButton("⚙️ إدارة الإذاعة", callback_data="adm_main"),
+            InlineKeyboardButton(VIEW_TITLES["archive"], callback_data="cat_archive:0"),
+            InlineKeyboardButton(VIEW_TITLES["general_archive"], callback_data="cat_general_archive:0"),
             InlineKeyboardButton("ℹ️ عن الأرشيف", callback_data="about_info"),
         ]) + [[home_button()]]
     )
@@ -144,6 +177,64 @@ async def radio_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "أرشيف إذاعة ابن حميد لتوثيق المحتوى الإذاعي.\nاختر من القائمة:"
     )
     await safe_edit_text(update.callback_query, text, kb)
+
+
+async def render_view(query, view: str, page: int = 0) -> None:
+    """يعرض ملفات الأرشيف مباشرة مع الصفحات وأزرار الإضافة/الإدارة أسفلها."""
+    items = collect_items(load_data(), view)
+    add_btn = InlineKeyboardButton("➕ إضافة محتوى جديد", callback_data=f"adm_add:{view}")
+    text = f"📂 **{VIEW_TITLES[view]}**\n━━━━━━━ • 📑 • ━━━━━━━\n\n"
+
+    if not items:
+        text += "⚠️ **لا توجد ملفات مضافة حالياً.**"
+        kb = InlineKeyboardMarkup([[add_btn], BACK_ROW])
+    else:
+        text += "👇 **قائمة المحتوى المتاح:**"
+        buttons = [
+            (iid, InlineKeyboardButton(f"📥 {idx}. {info['title']}", callback_data=f"dl:{cat}:{iid}"))
+            for idx, (cat, iid, info) in enumerate(items, start=1)
+        ]
+        manage_btn = InlineKeyboardButton("🗑️ إدارة وحذف", callback_data=f"adm_manage:{view}:{page}")
+        kb = build_paginated_keyboard(buttons, page, f"cat_{view}", [[add_btn, manage_btn], BACK_ROW])
+    await safe_edit_text(query, text, kb)
+
+
+async def render_manage(query, view: str, page: int = 0, notice: str = "") -> None:
+    """وضع الإدارة: لكل عنصر زر حذف وزر نقل للأرشيف العام."""
+    items = collect_items(load_data(), view)
+    back_btn = InlineKeyboardButton("✅ تم، رجوع للقائمة", callback_data=f"cat_{view}:{page}")
+
+    if not items:
+        text = (notice + "\n\n" if notice else "") + "⚠️ **لا توجد ملفات للإدارة.**"
+        await safe_edit_text(query, text, InlineKeyboardMarkup([[InlineKeyboardButton("✅ رجوع للقائمة", callback_data=f"cat_{view}:0")]]))
+        return
+
+    pages = (len(items) + MANAGE_PER_PAGE - 1) // MANAGE_PER_PAGE
+    page = max(0, min(page, pages - 1))
+    start = page * MANAGE_PER_PAGE
+    can_move = view != "general_archive"
+
+    rows = []
+    for idx, (cat, iid, info) in enumerate(items[start:start + MANAGE_PER_PAGE], start=start + 1):
+        row = [InlineKeyboardButton(f"🗑️ {idx}. {info['title'][:22]}", callback_data=f"admx:del:{view}:{page}:{iid}")]
+        if can_move:
+            row.append(InlineKeyboardButton("📦 نقل", callback_data=f"admx:mv:{view}:{page}:{iid}"))
+        rows.append(row)
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("◀️ السابق", callback_data=f"adm_manage:{view}:{page - 1}"))
+    if pages > 1:
+        nav.append(InlineKeyboardButton(f"{page + 1}/{pages}", callback_data="noop"))
+    if page < pages - 1:
+        nav.append(InlineKeyboardButton("التالي ▶️", callback_data=f"adm_manage:{view}:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("✅ تم، رجوع للقائمة", callback_data=f"cat_{view}:{page}")])
+
+    hint = "🗑️ للحذف" + (" • 📦 للنقل إلى الأرشيف العام" if can_move else "")
+    text = (notice + "\n\n" if notice else "") + f"🛠️ **إدارة {VIEW_TITLES[view]}**\n━━━━━━━ • ⚙️ • ━━━━━━━\n\n{hint}"
+    await safe_edit_text(query, text, InlineKeyboardMarkup(rows))
 
 
 async def radio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -156,35 +247,13 @@ async def radio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "about_info":
         await safe_edit_text(query, ABOUT_TEXT, BACK_RADIO)
 
-    elif data == "archive_menu":
-        kb = grid([InlineKeyboardButton(name, callback_data=f"cat_{k}:0") for k, name in CAT_NAMES.items() if k != "general_archive"])
-        kb.append([InlineKeyboardButton("🔙 قائمة الإذاعة", callback_data="radio_menu")])
-        await safe_edit_text(
-            query,
-            "📁 **الأرشيف الإذاعي**\n━━━━━━━ • 📑 • ━━━━━━━\n\nاختر القسم المطلوب:",
-            InlineKeyboardMarkup(kb),
-        )
+    elif data == "archive_menu":  # توافق مع الأزرار القديمة
+        await render_view(query, "archive", 0)
 
     elif data.startswith("cat_"):
-        # الصيغة: cat_<key>:<page>
+        # الصيغة: cat_<key>:<page> — أي مفتاح قديم (broadcasts/videos/...) يُحوَّل إلى الأرشيف الإذاعي
         cat_key, _, page_str = data[len("cat_"):].partition(":")
-        page = int(page_str) if page_str.isdigit() else 0
-        items = load_data().get(cat_key, {})
-        back_row = [InlineKeyboardButton("🔙 رجوع للأرشيف", callback_data="archive_menu")] if cat_key != "general_archive" else []
-        home_row = back_row + [InlineKeyboardButton("🔙 قائمة الإذاعة", callback_data="radio_menu")]
-
-        text = f"📂 **{CAT_NAMES.get(cat_key, '')}**\n━━━━━━━ • 📑 • ━━━━━━━\n\n"
-        if not items:
-            text += "⚠️ **لا توجد ملفات مضافة حالياً.**"
-            kb = InlineKeyboardMarkup([home_row])
-        else:
-            text += "👇 **قائمة المحتوى المتاح:**"
-            buttons = [
-                (item_id, InlineKeyboardButton(f"📥 {idx}. {info['title']}", callback_data=f"dl:{cat_key}:{item_id}"))
-                for idx, (item_id, info) in enumerate(items.items(), start=1)
-            ]
-            kb = build_paginated_keyboard(buttons, page, f"cat_{cat_key}", [home_row])
-        await safe_edit_text(query, text, kb)
+        await render_view(query, view_of(cat_key), _page(page_str))
 
     elif data.startswith("dl:"):
         _, cat_key, item_id = data.split(":", 2)
@@ -222,56 +291,33 @@ async def radio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if failures:
             footer += f"\n⚠️ تعذّر إرسال {failures} من العناصر (قد تكون محذوفة من تيليجرام)."
         nav = [[
-            InlineKeyboardButton("🔙 رجوع للقسم", callback_data=f"cat_{cat_key}:0"),
+            InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"cat_{view_of(cat_key)}:0"),
             InlineKeyboardButton("📻 قائمة الإذاعة", callback_data="radio_menu"),
         ]]
         await context.bot.send_message(chat_id=chat_id, text=footer, reply_markup=InlineKeyboardMarkup(nav), parse_mode="Markdown")
 
 
 # ----------------------------------------------------------------------------
-# إدارة الإذاعة (/admin) — بدون كلمة سر، الحماية عبر owner_guard
+# الإضافة (محادثة) — تبدأ من زر «➕ إضافة محتوى جديد» في صفحة التصفح
 # ----------------------------------------------------------------------------
-async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data.clear()
-    return await show_admin_panel(update, context)
-
-
-async def show_admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = InlineKeyboardMarkup(
-        grid([
-            InlineKeyboardButton("➕ إضافة ملفات", callback_data="adm_add_start"),
-            InlineKeyboardButton("📦 نقل للأرشيف العام", callback_data="adm_move_select_cat"),
-            InlineKeyboardButton("🗑️ حذف ملف", callback_data="adm_del_select_cat"),
-            InlineKeyboardButton("🔙 قائمة الإذاعة", callback_data="radio_menu"),
-        ]) + [[InlineKeyboardButton("❌ إغلاق لوحة التحكم", callback_data="adm_close")]]
-    )
-    text = "⚙️ **إدارة الإذاعة المدرسية**"
-    if update.callback_query:
-        await safe_edit_text(update.callback_query, text, kb)
-    else:
-        await context.bot.send_message(update.effective_chat.id, text, reply_markup=kb, parse_mode="Markdown")
-    return ConversationHandler.END
-
-
 async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    kb = grid([InlineKeyboardButton(name, callback_data=f"admcat_{k}") for k, name in CAT_NAMES.items() if k != "general_archive"])
-    kb.append([InlineKeyboardButton("« العودة للوحة الإدارة", callback_data="adm_main")])
-    await safe_edit_text(query, "📁 **اختر القسم للإضافة:**", InlineKeyboardMarkup(kb))
-    return ADMIN_SELECT_CAT
-
-
-async def admin_select_cat_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    context.user_data["admin_target_cat"] = query.data.replace("admcat_", "")
+    view = query.data.split(":", 1)[1]
+    context.user_data["admin_origin"] = view
+    context.user_data["admin_target_cat"] = ADD_TARGET.get(view, "broadcasts")
     context.user_data["admin_files_batch"] = []
+    context.user_data.pop("prompt_msg_id", None)
+
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ اكتفيت، انتقل للعنوان", callback_data="adm_done_files")],
-        [InlineKeyboardButton("❌ إلغاء", callback_data="adm_cancel_op")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data="adm_cancel")],
     ])
-    await safe_edit_text(query, f"📥 **أرسل الملفات أو النصوص الآن** (حد أقصى {MAX_BATCH_FILES}):", kb)
+    await safe_edit_text(
+        query,
+        f"📥 **الإضافة إلى {VIEW_TITLES.get(view, '')}**\n\nأرسل الملفات أو النصوص الآن (حد أقصى {MAX_BATCH_FILES}):",
+        kb,
+    )
     return ADMIN_WAITING_FILES
 
 
@@ -306,7 +352,7 @@ async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ اكتفيت بالمحتوى، انتقل لتحديد العنوان", callback_data="adm_done_files")],
-        [InlineKeyboardButton("❌ إلغاء", callback_data="adm_cancel_op")],
+        [InlineKeyboardButton("❌ إلغاء", callback_data="adm_cancel")],
     ])
     new_msg = await msg.reply_text(
         f"📥 **تم استلام المادة ({len(batch)}/{MAX_BATCH_FILES})!** أرسل التالية أو اضغط الزر:",
@@ -320,7 +366,7 @@ async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT
 async def admin_finish_files_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ إلغاء", callback_data="adm_cancel_op")]])
+    cancel_kb = InlineKeyboardMarkup([[InlineKeyboardButton("❌ إلغاء", callback_data="adm_cancel")]])
 
     if not context.user_data.get("admin_files_batch"):
         await safe_edit_text(query, "❌ لم ترسل أي مواد!", cancel_kb)
@@ -341,91 +387,35 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
 
     target_cat = context.user_data.get("admin_target_cat")
     batch = context.user_data.get("admin_files_batch")
+    origin = context.user_data.get("admin_origin", "archive")
     if not target_cat or not batch:
-        await context.bot.send_message(chat_id, "❌ حدث خطأ: انتهت الجلسة. ابدأ من جديد عبر /admin.")
+        await context.bot.send_message(chat_id, "❌ حدث خطأ: انتهت الجلسة. ابدأ من جديد عبر /start.")
         context.user_data.clear()
         return ConversationHandler.END
 
     db = load_data()
     db.setdefault(target_cat, {})[new_item_id()] = {"title": title, "files": batch}
     save_data(db)
-    asyncio.create_task(asyncio.to_thread(sync_to_github))
+    _sync_async()
     context.user_data.clear()
 
     await context.bot.send_message(
         chat_id,
         f"🎉 **تمت الإضافة بنجاح!**\n📌 **العنوان:** `{title}`",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« عودة للإدارة", callback_data="adm_main")]]),
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📂 عودة للقائمة", callback_data=f"cat_{origin}:0")]]),
         parse_mode="Markdown",
     )
     return ConversationHandler.END
 
 
-async def admin_del_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """يغطي: عرض اللوحة، الإغلاق، وتدفّقي الحذف/النقل."""
-    query, data = update.callback_query, update.callback_query.data
+async def admin_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """إلغاء الإضافة والرجوع لنفس صفحة التصفح التي بدأ منها المالك."""
+    query = update.callback_query
     await query.answer()
-
-    if data in ("adm_main", "adm_cancel_op"):
-        context.user_data.clear()
-        await show_admin_panel(update, context)
-        return ConversationHandler.END
-
-    if data == "adm_close":
-        context.user_data.clear()
-        await safe_delete_msg(context, query.message.chat_id, query.message.message_id)
-        return ConversationHandler.END
-
-    op = "del" if "del" in data else "move"
-    back_admin = InlineKeyboardMarkup([[InlineKeyboardButton("« عودة للإدارة", callback_data="adm_main")]])
-
-    if data in ("adm_del_select_cat", "adm_move_select_cat"):
-        kb = grid([InlineKeyboardButton(name, callback_data=f"adm{op}cat_{k}") for k, name in CAT_NAMES.items()])
-        kb.append([InlineKeyboardButton("« عودة للإدارة", callback_data="adm_main")])
-        await safe_edit_text(query, f"اختر القسم لـ ({'الحذف' if op == 'del' else 'النقل'}):", InlineKeyboardMarkup(kb))
-        return
-
-    if data.startswith(f"adm{op}cat_") and ":" not in data:
-        await _render_admin_item_picker(query, data.replace(f"adm{op}cat_", ""), op, page=0)
-        return
-
-    if data.startswith(f"adm{op}page_"):
-        # الصيغة: adm{op}page_<cat_key>:<page>
-        cat_key, _, page_str = data[len(f"adm{op}page_"):].partition(":")
-        await _render_admin_item_picker(query, cat_key, op, page=int(page_str) if page_str.isdigit() else 0)
-        return
-
-    if data.startswith(f"admdo{op}:"):
-        _, cat_key, iid = data.split(":", 2)
-        db = load_data()
-        if iid in db.get(cat_key, {}):
-            if op == "del":
-                del db[cat_key][iid]
-            else:
-                db.setdefault("general_archive", {})[iid] = db[cat_key].pop(iid)
-            save_data(db)
-            asyncio.create_task(asyncio.to_thread(sync_to_github))
-            await safe_edit_text(query, "✅ **تمت العملية بنجاح!**", back_admin)
-        else:
-            await safe_edit_text(query, "⚠️ هذا العنصر لم يعد موجودًا.", back_admin)
-
-
-async def _render_admin_item_picker(query, cat_key: str, op: str, page: int) -> None:
-    items = load_data().get(cat_key, {})
-    if not items:
-        await safe_edit_text(
-            query, "⚠️ القسم فارغ.",
-            InlineKeyboardMarkup([[InlineKeyboardButton("« عودة للإدارة", callback_data="adm_main")]]),
-        )
-        return
-
-    label = "🗑️ حذف" if op == "del" else "📦 نقل"
-    buttons = [
-        (iid, InlineKeyboardButton(f"{label}: {info['title'][:30]}", callback_data=f"admdo{op}:{cat_key}:{iid}"))
-        for iid, info in items.items()
-    ]
-    extra_rows = [[InlineKeyboardButton("« عودة للإدارة", callback_data="adm_main")]]
-    await safe_edit_text(query, "اختر المحتوى المطلوب:", build_paginated_keyboard(buttons, page, f"adm{op}page_{cat_key}", extra_rows))
+    origin = context.user_data.get("admin_origin", "archive")
+    context.user_data.clear()
+    await render_view(query, origin, 0)
+    return ConversationHandler.END
 
 
 async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -435,18 +425,59 @@ async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ----------------------------------------------------------------------------
+# الإدارة المباشرة (حذف / نقل للأرشيف العام) من صفحة التصفح
+# ----------------------------------------------------------------------------
+async def manage_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """adm_manage:<view>:<page>  |  admx:<op>:<view>:<page>:<item_id>  (op = del / ydel / mv)"""
+    query, data = update.callback_query, update.callback_query.data
+    await query.answer()
+
+    if data.startswith("adm_manage:"):
+        _, view, page = data.split(":", 2)
+        await render_manage(query, view_of(view), _page(page))
+        return
+
+    _, op, view, page, iid = data.split(":", 4)
+    view, page = view_of(view), _page(page)
+    db = load_data()
+    cat = find_item_cat(db, view, iid)
+    if cat is None:
+        await render_manage(query, view, page, notice="⚠️ هذا العنصر لم يعد موجودًا.")
+        return
+
+    title = db[cat][iid]["title"]
+    safe_title = md_safe(title)
+
+    if op == "del":  # شاشة تأكيد قبل الحذف النهائي
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ نعم، احذف", callback_data=f"admx:ydel:{view}:{page}:{iid}"),
+            InlineKeyboardButton("❌ تراجع", callback_data=f"adm_manage:{view}:{page}"),
+        ]])
+        await safe_edit_text(query, f"⚠️ **تأكيد الحذف**\n\nهل تريد حذف «{safe_title}» نهائيًا؟", kb)
+
+    elif op == "ydel":
+        del db[cat][iid]
+        save_data(db)
+        _sync_async()
+        await render_manage(query, view, page, notice=f"🗑️ **تم حذف:** {safe_title}")
+
+    elif op == "mv":
+        if cat == "general_archive":
+            await render_manage(query, view, page, notice="ℹ️ العنصر موجود في الأرشيف العام أصلًا.")
+            return
+        db.setdefault("general_archive", {})[iid] = db[cat].pop(iid)
+        save_data(db)
+        _sync_async()
+        await render_manage(query, view, page, notice=f"📦 **تم النقل للأرشيف العام:** {safe_title}")
+
+
+# ----------------------------------------------------------------------------
 # الربط مع main.py
 # ----------------------------------------------------------------------------
 def register(app) -> None:
-    admin_conv = ConversationHandler(
-        entry_points=[
-            CommandHandler("admin", admin_command),
-            CallbackQueryHandler(admin_add_start, pattern="^adm_add_start$"),
-        ],
+    add_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(admin_add_start, pattern=r"^adm_add:(archive|general_archive)$")],
         states={
-            ADMIN_SELECT_CAT: [
-                CallbackQueryHandler(admin_select_cat_step, pattern="^admcat_"),
-            ],
             ADMIN_WAITING_FILES: [
                 MessageHandler(
                     (filters.Document.ALL | filters.PHOTO | filters.VIDEO | filters.AUDIO | filters.VOICE | filters.TEXT)
@@ -461,10 +492,10 @@ def register(app) -> None:
         },
         fallbacks=[
             CommandHandler("cancel", cancel_conv),
-            CallbackQueryHandler(admin_del_handler, pattern="^(adm_main|adm_cancel_op)$"),
+            CallbackQueryHandler(admin_cancel, pattern="^adm_cancel$"),
         ],
         per_user=True,
     )
-    app.add_handler(admin_conv)
-    app.add_handler(CallbackQueryHandler(admin_del_handler, pattern="^adm"))
+    app.add_handler(add_conv)
+    app.add_handler(CallbackQueryHandler(manage_handler, pattern=r"^(adm_manage:|admx:)"))
     app.add_handler(CallbackQueryHandler(radio_handler, pattern=r"^(radio_menu|archive_menu|about_info|cat_|dl:)"))

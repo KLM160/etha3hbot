@@ -1,5 +1,5 @@
 """
-🚀 Personal Dashboard — مساعد حامد الشخصي
+⏳ يوماً ما | One Day — مساعد حامد الشخصي
 --------------------------------------------------
 main.py : نقطة التشغيل + القائمة الرئيسية + حارس المالك + إعداد أوامر البوت.
 
@@ -40,20 +40,14 @@ logger = logging.getLogger("bot")
 SECTIONS = [todo, quran, english, qudrat, workout, radio]
 
 MOTIVATION = [
-    "الإنجاز الكبير يبدأ بخطوة صغيرة، وأنت اليوم أقرب من أمس 💪",
-    "لا تنتظر الحماس، ابدأ والحماس يلحقك 💥",
-    "القليل المستمر أفضل من الكثير المنقطع، كمّل يا بطل ✨",
-    "كل يوم تلتزم فيه يبنيك أقوى وأقرب لهدفك 🎯",
-    "تعب اليوم راحة بكرة، وما يضيع جهد وراه نية صادقة 🌟",
-    "اللي يبي المراتب العالية ما ينام عنها، شد حيلك 🏆",
-    "نظّم وقتك قبل لا يُنظّمك، وخلّ يومك يشهد لك 🚀",
+    "Create your own effect. Every single day counts. ⏳",
+    "No weakness here. Push forward towards KFUPM! 🥊",
+    "Small daily victories lead to ultimate success. 💪",
+    "Stay continuous, stay focused. One Day is built today. 🎯",
+    "Work hard in silence, let your results make the noise. ✨",
+    "Discipline today, freedom tomorrow. Keep building. 🔥",
+    "You're not behind. You're building. Keep going. 🚀",
 ]
-
-INTRO = (
-    "🧭 **عن البوت:** مساعدك الشخصي الخاص، مغلق عليك وحدك.\n"
-    "يجمع مهامك وقرآنك ولغتك وقدراتك وتمرينك وإذاعتك المدرسية في مكان واحد، "
-    "ونطوّره معاً قسماً بعد قسم."
-)
 
 
 async def owner_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -65,12 +59,12 @@ async def owner_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def home_text() -> str:
     return (
-        f"🚀 **Personal Dashboard**\n"
-        f"━━━━━━━ • ✨ • ━━━━━━━\n\n"
-        f"أهلاً {OWNER_NAME} 👋\n\n"
-        f"{INTRO}\n\n"
+        "⏳ **يوماً ما | One Day**\n"
+        "━━━━━━━ • ✨ • ━━━━━━━\n\n"
+        f"يا هلا {OWNER_NAME} 👋\n"
+        "يومك الجديد بدأ، وكل خطوة اليوم تقرّبك من حلمك. خلّنا نصنع أثرنا 💪\n\n"
         f"🔥 {random.choice(MOTIVATION)}\n\n"
-        f"👇 اختر القسم:"
+        "👇 اختر القسم:"
     )
 
 
@@ -98,19 +92,17 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 async def post_init(app) -> None:
     """يضبط أوامر البوت ونصوص ملفه الشخصي في تيليجرام عند كل تشغيل."""
     try:
-        await app.bot.delete_my_commands()  # يمسح الأمر القديم (القائمة الرئيسية لإذاعة ابن حميد)
+        await app.bot.delete_my_commands()  # يمسح الأوامر القديمة (ومنها /admin)
         await app.bot.set_my_commands(
-            [
-                BotCommand("start", "🚀 اللوحة الرئيسية"),
-                BotCommand("admin", "⚙️ إدارة الإذاعة المدرسية"),
-            ],
+            [BotCommand("start", "⏳ اللوحة الرئيسية")],
             scope=BotCommandScopeChat(chat_id=ALLOWED_USER_ID),
         )
-        await app.bot.set_my_short_description("🚀 مساعد حامد الشخصي: مهامك وقرآنك ولغتك وقدراتك وتمرينك في مكان واحد.")
+        await app.bot.set_my_short_description("⏳ يوماً ما | One Day — مهامك وقرآنك ولغتك وقدراتك وتمرينك في مكان واحد.")
         await app.bot.set_my_description(
-            "🚀 Personal Dashboard\n\n"
+            "⏳ يوماً ما | One Day\n\n"
             "مساعد حامد الشخصي الخاص: المهام اليومية، القرآن الكريم، اللغة الإنجليزية، "
             "القدرات، التمرين، والإذاعة المدرسية في مكان واحد.\n\n"
+            "Create your own effect. 💪\n"
             "🔒 البوت مغلق على صاحبه فقط."
         )
     except TelegramError as e:
@@ -123,7 +115,7 @@ class SimpleHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Personal Dashboard Bot Running")
+        self.wfile.write(b"One Day Bot Running")
 
     def log_message(self, format, *args):  # noqa: A002
         return
@@ -145,7 +137,7 @@ def main():
         section.register(app)
 
     app.add_error_handler(error_handler)
-    logger.info("✅ Personal Dashboard جاهز للعمل.")
+    logger.info("✅ One Day جاهز للعمل.")
     app.run_polling()
 
 
