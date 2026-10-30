@@ -1,26 +1,5 @@
 {
-    "broadcasts": {
-        "item_1790950954_69d717ca": {
-            "title": "إن أكرمكم عند الله أتقاكم",
-            "files": [
-                {
-                    "file_id": "BQACAgQAAxkBAAIEp2q_vg-tmeXAz7i_NDK5Jpf_7miFAAKBJQACd4kBUsq2jXUP8-GTPQQ",
-                    "type": "document",
-                    "text": null
-                },
-                {
-                    "file_id": "BQACAgQAAxkBAAIEqGq_vg_9Gx1xk6GNbSLBAVfXBjNTAAJ_JQACd4kBUn_Xc8it_VNSPQQ",
-                    "type": "document",
-                    "text": null
-                },
-                {
-                    "file_id": "BQACAgQAAxkBAAIEqWq_vg8KsM714aBgKVwHAAFppPPV5gACgCUAAneJAVLLar9fHUEn_z0E",
-                    "type": "document",
-                    "text": null
-                }
-            ]
-        }
-    },
+    "broadcasts": {},
     "videos": {
         "item_1790999403_479818c8": {
             "title": "صلاة الفجر",
@@ -223,6 +202,26 @@
                 {
                     "file_id": "BAACAgQAAxkBAAIEi2q9erc4J8qh-Apk7hrUTHY-8awmAAKtHgACFVbwUVF4RFPfq49QPQQ",
                     "type": "video",
+                    "text": null
+                }
+            ]
+        },
+        "item_1790950954_69d717ca": {
+            "title": "إن أكرمكم عند الله أتقاكم",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAIEp2q_vg-tmeXAz7i_NDK5Jpf_7miFAAKBJQACd4kBUsq2jXUP8-GTPQQ",
+                    "type": "document",
+                    "text": null
+                },
+                {
+                    "file_id": "BQACAgQAAxkBAAIEqGq_vg_9Gx1xk6GNbSLBAVfXBjNTAAJ_JQACd4kBUn_Xc8it_VNSPQQ",
+                    "type": "document",
+                    "text": null
+                },
+                {
+                    "file_id": "BQACAgQAAxkBAAIEqWq_vg8KsM714aBgKVwHAAFppPPV5gACgCUAAneJAVLLar9fHUEn_z0E",
+                    "type": "document",
                     "text": null
                 }
             ]
