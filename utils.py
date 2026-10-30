@@ -99,3 +99,26 @@ def save_json(filename: str, data: Any) -> None:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
         os.replace(tmp, path)
+
+
+# ------------------------ شاشة التحكم الفعّالة ------------------------
+PANEL_KEY = "panel_msg"
+
+
+def track_panel(context: ContextTypes.DEFAULT_TYPE, message) -> None:
+    """يحفظ (chat_id, message_id) لشاشة التحكم الحالية في bot_data (البوت لمالك واحد)."""
+    try:
+        context.application.bot_data[PANEL_KEY] = (message.chat.id, message.message_id)
+    except AttributeError:
+        pass
+
+
+async def drop_old_panel(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """يحذف شاشة التحكم المحفوظة بصمت ويمسح المفتاح؛ لا يرمي استثناءً أبداً."""
+    try:
+        saved = context.application.bot_data.pop(PANEL_KEY, None)
+        if saved:
+            chat_id, msg_id = saved
+            await safe_delete_msg(context, chat_id, msg_id)
+    except Exception as e:  # noqa: BLE001
+        logger.debug("تعذّر حذف الشاشة القديمة: %s", e)

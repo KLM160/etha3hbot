@@ -28,7 +28,7 @@ from telegram.ext import (
 )
 
 from config import GH_REPO, GH_TOKEN
-from utils import build_paginated_keyboard, grid, home_button, safe_delete_msg, safe_edit_text
+from utils import build_paginated_keyboard, grid, home_button, safe_delete_msg, safe_edit_text, track_panel
 
 logger = logging.getLogger("bot.radio")
 
@@ -129,10 +129,24 @@ def view_of(cat_key: str) -> str:
     return "general_archive" if cat_key == "general_archive" else "archive"
 
 
+def item_timestamp(iid: str) -> int:
+    """يستخرج التوقيت من المعرّف item_<timestamp>_... ويرجع 0 عند فشل التحويل."""
+    try:
+        return int(str(iid).split("_")[1])
+    except (IndexError, ValueError):
+        return 0
+
+
 def collect_items(db: dict, view: str) -> list:
-    """قائمة مسطّحة [(cat_key, item_id, info)] للعرض المطلوب."""
+    """قائمة مسطّحة [(cat_key, item_id, info)] مرتّبة زمنياً من الأقدم إلى الأحدث."""
     keys = ("general_archive",) if view == "general_archive" else ARCHIVE_SOURCES
-    return [(k, iid, info) for k in keys for iid, info in db.get(k, {}).items()]
+    items = [(k, iid, info) for k in keys for iid, info in db.get(k, {}).items()]
+    return sorted(items, key=lambda x: item_timestamp(x[1]))  # ترتيب مستقر: المتساوي يبقى كما هو
+
+
+def one_line(text: str) -> str:
+    """يحوّل أسطر العنوان إلى سطر واحد لاستخدامه داخل نص الزر."""
+    return str(text).replace("\r", " ").replace("\n", " ")
 
 
 def find_item_cat(db: dict, view: str, iid: str):
@@ -191,7 +205,7 @@ async def render_view(query, view: str, page: int = 0) -> None:
     else:
         text += "👇 **قائمة المحتوى المتاح:**"
         buttons = [
-            (iid, InlineKeyboardButton(f"📥 {idx}. {info['title']}", callback_data=f"dl:{cat}:{iid}"))
+            (iid, InlineKeyboardButton(f"📥 {idx}. {one_line(info['title'])}", callback_data=f"dl:{cat}:{iid}"))
             for idx, (cat, iid, info) in enumerate(items, start=1)
         ]
         manage_btn = InlineKeyboardButton("🗑️ إدارة وحذف", callback_data=f"adm_manage:{view}:{page}")
@@ -202,8 +216,6 @@ async def render_view(query, view: str, page: int = 0) -> None:
 async def render_manage(query, view: str, page: int = 0, notice: str = "") -> None:
     """وضع الإدارة: لكل عنصر زر حذف وزر نقل للأرشيف العام."""
     items = collect_items(load_data(), view)
-    back_btn = InlineKeyboardButton("✅ تم، رجوع للقائمة", callback_data=f"cat_{view}:{page}")
-
     if not items:
         text = (notice + "\n\n" if notice else "") + "⚠️ **لا توجد ملفات للإدارة.**"
         await safe_edit_text(query, text, InlineKeyboardMarkup([[InlineKeyboardButton("✅ رجوع للقائمة", callback_data=f"cat_{view}:0")]]))
@@ -216,7 +228,7 @@ async def render_manage(query, view: str, page: int = 0, notice: str = "") -> No
 
     rows = []
     for idx, (cat, iid, info) in enumerate(items[start:start + MANAGE_PER_PAGE], start=start + 1):
-        row = [InlineKeyboardButton(f"🗑️ {idx}. {info['title'][:22]}", callback_data=f"admx:del:{view}:{page}:{iid}")]
+        row = [InlineKeyboardButton(f"🗑️ {idx}. {one_line(info['title'])[:22]}", callback_data=f"admx:del:{view}:{page}:{iid}")]
         if can_move:
             row.append(InlineKeyboardButton("📦 نقل", callback_data=f"admx:mv:{view}:{page}:{iid}"))
         rows.append(row)
@@ -264,7 +276,11 @@ async def radio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await safe_edit_text(query, "⏳ **جاري جلب المحتوى...**")
         chat_id = query.message.chat_id
-        await context.bot.send_message(chat_id=chat_id, text=f"📦 **المحتوى المطلوب:** {item['title']}")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"📦 **المحتوى المطلوب:** {md_safe(item['title'])}",
+            parse_mode="Markdown",
+        )
 
         failures = 0
         for f in item.get("files", []):
@@ -287,14 +303,17 @@ async def radio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await safe_delete_msg(context, chat_id, query.message.message_id)
 
-        footer = f"✨ **تم إرسال المحتوى:**\n📌 **{item['title']}**"
+        footer = f"✨ **تم إرسال المحتوى:**\n📌 **{md_safe(item['title'])}**"
         if failures:
             footer += f"\n⚠️ تعذّر إرسال {failures} من العناصر (قد تكون محذوفة من تيليجرام)."
         nav = [[
             InlineKeyboardButton("🔙 رجوع للقائمة", callback_data=f"cat_{view_of(cat_key)}:0"),
             InlineKeyboardButton("📻 قائمة الإذاعة", callback_data="radio_menu"),
         ]]
-        await context.bot.send_message(chat_id=chat_id, text=footer, reply_markup=InlineKeyboardMarkup(nav), parse_mode="Markdown")
+        footer_msg = await context.bot.send_message(
+            chat_id=chat_id, text=footer, reply_markup=InlineKeyboardMarkup(nav), parse_mode="Markdown"
+        )
+        track_panel(context, footer_msg)
 
 
 # ----------------------------------------------------------------------------
@@ -399,12 +418,13 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
     _sync_async()
     context.user_data.clear()
 
-    await context.bot.send_message(
+    done_msg = await context.bot.send_message(
         chat_id,
         f"🎉 **تمت الإضافة بنجاح!**\n📌 **العنوان:** `{title}`",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📂 عودة للقائمة", callback_data=f"cat_{origin}:0")]]),
         parse_mode="Markdown",
     )
+    track_panel(context, done_msg)
     return ConversationHandler.END
 
 
@@ -422,6 +442,20 @@ async def cancel_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚫 **تم الإلغاء.**", parse_mode="Markdown")
     context.user_data.clear()
     return ConversationHandler.END
+
+
+async def end_on_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """/start أثناء الإضافة: ينهي المحادثة بصمت (الرد تتولاه start في main.py عبر group=1)."""
+    context.user_data.clear()
+    return ConversationHandler.END
+
+
+async def stale_session(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أزرار إضافة عالقة بعد إعادة تشغيل البوت (المحادثة لم تعد موجودة)."""
+    query = update.callback_query
+    await query.answer("انتهت الجلسة")
+    context.user_data.clear()
+    await render_view(query, "archive", 0)
 
 
 # ----------------------------------------------------------------------------
@@ -492,10 +526,12 @@ def register(app) -> None:
         },
         fallbacks=[
             CommandHandler("cancel", cancel_conv),
+            CommandHandler("start", end_on_start),
             CallbackQueryHandler(admin_cancel, pattern="^adm_cancel$"),
         ],
         per_user=True,
     )
     app.add_handler(add_conv)
+    app.add_handler(CallbackQueryHandler(stale_session, pattern=r"^adm_(done_files|cancel)$"))
     app.add_handler(CallbackQueryHandler(manage_handler, pattern=r"^(adm_manage:|admx:)"))
     app.add_handler(CallbackQueryHandler(radio_handler, pattern=r"^(radio_menu|archive_menu|about_info|cat_|dl:)"))

@@ -1,5 +1,5 @@
 """
-⏳ يوماً ما | One Day — مساعد حامد الشخصي
+⏳ يوماً ما | One Day ⏳💪 — مساعد حامد الشخصي
 --------------------------------------------------
 main.py : نقطة التشغيل + القائمة الرئيسية + حارس المالك + إعداد أوامر البوت.
 
@@ -31,7 +31,7 @@ import quran
 import radio
 import todo
 import workout
-from utils import grid, safe_edit_text
+from utils import drop_old_panel, grid, safe_delete_msg, safe_edit_text, track_panel
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger("bot")
@@ -59,7 +59,7 @@ async def owner_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def home_text() -> str:
     return (
-        "⏳ **يوماً ما | One Day**\n"
+        "⏳ **يوماً ما | One Day ⏳💪**\n"
         "━━━━━━━ • ✨ • ━━━━━━━\n\n"
         f"يا هلا {OWNER_NAME} 👋\n"
         "يومك الجديد بدأ، وكل خطوة اليوم تقرّبك من حلمك. خلّنا نصنع أثرنا 💪\n\n"
@@ -68,13 +68,35 @@ def home_text() -> str:
     )
 
 
+def home_keyboard() -> InlineKeyboardMarkup:
+    """الأول وحده، الأوسط بعمودين، والأخير وحده."""
+    def btn(section) -> InlineKeyboardButton:
+        return InlineKeyboardButton(section.TITLE, callback_data=section.MENU)
+
+    rows = [[btn(SECTIONS[0])]]
+    rows += grid([btn(s) for s in SECTIONS[1:-1]], cols=2)
+    rows.append([btn(SECTIONS[-1])])
+    return InlineKeyboardMarkup(rows)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """شاشة تحكم واحدة فقط: المعرّف يُحفظ في bot_data لأن user_data تُمسح هنا."""
     context.user_data.clear()
-    kb = InlineKeyboardMarkup(grid([InlineKeyboardButton(s.TITLE, callback_data=s.MENU) for s in SECTIONS]))
-    if update.callback_query:
-        await safe_edit_text(update.callback_query, home_text(), kb)
-    else:
-        await update.message.reply_text(home_text(), reply_markup=kb, parse_mode="Markdown")
+    kb = home_keyboard()
+    query = update.callback_query
+
+    if query:  # رجوع للرئيسية: تعديل في نفس الرسالة وتحديث المعرّف المحفوظ
+        await safe_edit_text(query, home_text(), kb)
+        track_panel(context, query.message)
+        return
+
+    chat_id = update.effective_chat.id
+    msg = update.effective_message
+    if msg:
+        await safe_delete_msg(context, chat_id, msg.message_id)  # رسالة الأمر نفسها
+    await drop_old_panel(context)  # الشاشة الفعّالة السابقة (لوحة التحكم فقط، لا ملفات الأرشيف)
+    sent = await context.bot.send_message(chat_id, home_text(), reply_markup=kb, parse_mode="Markdown")
+    track_panel(context, sent)
 
 
 async def main_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -92,19 +114,16 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 async def post_init(app) -> None:
     """يضبط أوامر البوت ونصوص ملفه الشخصي في تيليجرام عند كل تشغيل."""
     try:
-        await app.bot.delete_my_commands()  # يمسح الأوامر القديمة (ومنها /admin)
+        # يمسح أوامر النطاق الافتراضي فقط (فلا تظهر أوامر لغير المالك)؛
+        # أما أوامر شات المالك (ومنها /admin القديم) فتُستبدل بالسطر التالي.
+        await app.bot.delete_my_commands()
         await app.bot.set_my_commands(
             [BotCommand("start", "⏳ اللوحة الرئيسية")],
             scope=BotCommandScopeChat(chat_id=ALLOWED_USER_ID),
         )
-        await app.bot.set_my_short_description("⏳ يوماً ما | One Day — مهامك وقرآنك ولغتك وقدراتك وتمرينك في مكان واحد.")
-        await app.bot.set_my_description(
-            "⏳ يوماً ما | One Day\n\n"
-            "مساعد حامد الشخصي الخاص: المهام اليومية، القرآن الكريم، اللغة الإنجليزية، "
-            "القدرات، التمرين، والإذاعة المدرسية في مكان واحد.\n\n"
-            "Create your own effect. 💪\n"
-            "🔒 البوت مغلق على صاحبه فقط."
-        )
+        # وصف فارغ تماماً حتى لا يظهر أي نص قبل /start
+        await app.bot.set_my_short_description("")
+        await app.bot.set_my_description("")
     except TelegramError as e:
         logger.warning("تعذّر ضبط أوامر/وصف البوت: %s", e)
 
@@ -130,7 +149,8 @@ def main():
     app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
 
     app.add_handler(TypeHandler(Update, owner_guard), group=-1)  # 🔒 حارس المالك
-    app.add_handler(CommandHandler("start", start))
+    # group=1: محادثة الإضافة في radio.py تلتقط /start في group=0 لتُنهي نفسها، ثم تعمل start مستقلة هنا
+    app.add_handler(CommandHandler("start", start), group=1)
     app.add_handler(CallbackQueryHandler(main_callbacks, pattern=r"^(main|noop)$"))
 
     for section in SECTIONS:
