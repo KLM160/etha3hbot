@@ -1,5 +1,5 @@
 """
-⏳ يوماً ما | One Day ⏳💪 — مساعد حامد الشخصي
+يوماً ما | One Day ⏳💪 — مساعد حامد الشخصي
 --------------------------------------------------
 main.py : نقطة التشغيل + القائمة الرئيسية + حارس المالك + إعداد أوامر البوت.
 
@@ -31,7 +31,7 @@ import quran
 import radio
 import todo
 import workout
-from utils import drop_old_panel, grid, safe_delete_msg, safe_edit_text, track_panel
+from utils import claim_panel, drop_old_panel, grid, safe_delete_msg, safe_edit_text, track_panel
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 logger = logging.getLogger("bot")
@@ -51,9 +51,20 @@ MOTIVATION = [
 
 
 async def owner_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """🔒 يتجاهل أي تحديث من غير المالك بصمت قبل وصوله لأي Handler."""
+    """🔒 يتجاهل أي تحديث من غير المالك بصمت، ثم يضمن واجهة واحدة فقط:
+    أي زر يُضغط من رسالة غير الواجهة الفعّالة (واجهة قديمة قبل تحديث/إعادة تشغيل البوت)
+    تُحذف الرسالة القديمة ويُوقَف التحديث قبل وصوله لأي Handler."""
     user = update.effective_user
     if user is None or user.id != ALLOWED_USER_ID:
+        raise ApplicationHandlerStop
+
+    query = update.callback_query
+    if query is not None and query.message is not None and not claim_panel(context, query.message):
+        try:
+            await query.answer("⚠️ هذه واجهة قديمة، استخدم الواجهة الحديثة أو أرسل /start", show_alert=True)
+        except TelegramError:
+            pass
+        await safe_delete_msg(context, query.message.chat.id, query.message.message_id)
         raise ApplicationHandlerStop
 
 

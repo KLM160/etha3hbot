@@ -28,7 +28,7 @@ from telegram.ext import (
 )
 
 from config import GH_REPO, GH_TOKEN
-from utils import build_paginated_keyboard, grid, home_button, safe_delete_msg, safe_edit_text, track_panel
+from utils import build_paginated_keyboard, grid, home_button, safe_delete_msg, safe_edit_text, drop_old_panel, track_panel
 
 logger = logging.getLogger("bot.radio")
 
@@ -39,6 +39,7 @@ TITLE = "📻 الإذاعة المدرسية"
 MENU = "radio_menu"
 
 DATA_FILE = "data.json"
+DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), DATA_FILE)  # مسار ثابت مهما كان مجلد التشغيل
 MAX_BATCH_FILES = 10
 MANAGE_PER_PAGE = 5
 
@@ -61,6 +62,8 @@ ADD_TARGET = {"archive": "broadcasts", "general_archive": "general_archive"}  # 
 VIEW_TITLES = {"archive": "📁 الأرشيف الإذاعي", "general_archive": "🗄️ الأرشيف العام"}
 
 DATA_LOCK = threading.Lock()
+SYNC_LOCK = threading.Lock()  # دفعة GitHub واحدة في كل مرة (يتفادى تعارض sha)
+_BG_TASKS: set = set()  # مراجع لمهام المزامنة حتى لا يجمعها GC قبل انتهائها
 
 
 # ----------------------------------------------------------------------------
@@ -68,11 +71,11 @@ DATA_LOCK = threading.Lock()
 # ----------------------------------------------------------------------------
 def load_data() -> dict:
     with DATA_LOCK:
-        if not os.path.exists(DATA_FILE):
+        if not os.path.exists(DATA_PATH):
             _save_data_locked(DEFAULT_DATA)
             return json.loads(json.dumps(DEFAULT_DATA))
         try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
+            with open(DATA_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
             return {**DEFAULT_DATA, **data}
         except Exception as e:
@@ -81,10 +84,10 @@ def load_data() -> dict:
 
 
 def _save_data_locked(data: dict) -> None:
-    tmp_path = f"{DATA_FILE}.tmp"
+    tmp_path = f"{DATA_PATH}.tmp"
     with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-    os.replace(tmp_path, DATA_FILE)
+    os.replace(tmp_path, DATA_PATH)
 
 
 def save_data(data: dict) -> None:
@@ -97,31 +100,40 @@ def new_item_id() -> str:
 
 
 def sync_to_github() -> None:
+    """يرفع data.json إلى GitHub. كل دفعة تقرأ آخر نسخة من الملف، وتُعاد المحاولة عند تعارض sha.
+    وسم [skip render] في الرسالة يمنع Render من إعادة تشغيل البوت مع كل تعديل (سبب ظهور واجهتين)."""
     if not (GH_TOKEN and GH_REPO):
         return
     url = f"https://api.github.com/repos/{GH_REPO}/contents/{DATA_FILE}"
     headers = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    try:
-        with DATA_LOCK:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                content = base64.b64encode(f.read().encode()).decode()
+    with SYNC_LOCK:
+        for attempt in range(3):
+            try:
+                with DATA_LOCK:
+                    with open(DATA_PATH, "rb") as f:
+                        content = base64.b64encode(f.read()).decode()
 
-        get_res = requests.get(url, headers=headers, timeout=15)
-        sha = get_res.json().get("sha") if get_res.status_code == 200 else None
+                get_res = requests.get(url, headers=headers, timeout=15)
+                sha = get_res.json().get("sha") if get_res.status_code == 200 else None
 
-        payload = {"message": "🔄 التحديث التلقائي للأرشيف", "content": content}
-        if sha:
-            payload["sha"] = sha
+                payload = {"message": "🔄 التحديث التلقائي للأرشيف [skip render]", "content": content}
+                if sha:
+                    payload["sha"] = sha
 
-        put_res = requests.put(url, headers=headers, json=payload, timeout=15)
-        if put_res.status_code not in (200, 201):
-            logger.error("فشلت مزامنة GitHub (status=%s): %s", put_res.status_code, put_res.text[:500])
-        else:
-            logger.info("✅ تمت مزامنة الأرشيف مع GitHub بنجاح.")
-    except requests.RequestException as e:
-        logger.error("GitHub Network Error: %s", e)
-    except Exception as e:
-        logger.error("GitHub Error غير متوقع: %s", e)
+                put_res = requests.put(url, headers=headers, json=payload, timeout=15)
+                if put_res.status_code in (200, 201):
+                    logger.info("✅ تمت مزامنة الأرشيف مع GitHub بنجاح.")
+                    return
+                if put_res.status_code in (409, 422) and attempt < 2:
+                    continue  # sha قديم: أعد القراءة وحاول ثانية
+                logger.error("فشلت مزامنة GitHub (status=%s): %s", put_res.status_code, put_res.text[:500])
+                return
+            except requests.RequestException as e:
+                logger.error("GitHub Network Error: %s", e)
+                return
+            except Exception as e:
+                logger.error("GitHub Error غير متوقع: %s", e)
+                return
 
 
 def view_of(cat_key: str) -> str:
@@ -140,8 +152,15 @@ def item_timestamp(iid: str) -> int:
 def collect_items(db: dict, view: str) -> list:
     """قائمة مسطّحة [(cat_key, item_id, info)] مرتّبة زمنياً من الأقدم إلى الأحدث."""
     keys = ("general_archive",) if view == "general_archive" else ARCHIVE_SOURCES
-    items = [(k, iid, info) for k in keys for iid, info in db.get(k, {}).items()]
+    items = [(k, iid, info) for k in keys for iid, info in (db.get(k) or {}).items() if isinstance(info, dict)]
     return sorted(items, key=lambda x: item_timestamp(x[1]))  # ترتيب مستقر: المتساوي يبقى كما هو
+
+
+def item_title(info) -> str:
+    """عنوان العنصر مع حماية من البيانات الناقصة."""
+    if isinstance(info, dict) and info.get("title"):
+        return str(info["title"])
+    return "بدون عنوان"
 
 
 def one_line(text: str) -> str:
@@ -167,7 +186,9 @@ def _page(value) -> int:
 
 
 def _sync_async() -> None:
-    asyncio.create_task(asyncio.to_thread(sync_to_github))
+    task = asyncio.create_task(asyncio.to_thread(sync_to_github))
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
 
 
 # ----------------------------------------------------------------------------
@@ -205,7 +226,7 @@ async def render_view(query, view: str, page: int = 0) -> None:
     else:
         text += "👇 **قائمة المحتوى المتاح:**"
         buttons = [
-            (iid, InlineKeyboardButton(f"📥 {idx}. {one_line(info['title'])}", callback_data=f"dl:{cat}:{iid}"))
+            (iid, InlineKeyboardButton(f"📥 {idx}. {one_line(item_title(info))}", callback_data=f"dl:{cat}:{iid}"))
             for idx, (cat, iid, info) in enumerate(items, start=1)
         ]
         manage_btn = InlineKeyboardButton("🗑️ إدارة وحذف", callback_data=f"adm_manage:{view}:{page}")
@@ -228,7 +249,7 @@ async def render_manage(query, view: str, page: int = 0, notice: str = "") -> No
 
     rows = []
     for idx, (cat, iid, info) in enumerate(items[start:start + MANAGE_PER_PAGE], start=start + 1):
-        row = [InlineKeyboardButton(f"🗑️ {idx}. {one_line(info['title'])[:22]}", callback_data=f"admx:del:{view}:{page}:{iid}")]
+        row = [InlineKeyboardButton(f"🗑️ {idx}. {one_line(item_title(info))[:22]}", callback_data=f"admx:del:{view}:{page}:{iid}")]
         if can_move:
             row.append(InlineKeyboardButton("📦 نقل", callback_data=f"admx:mv:{view}:{page}:{iid}"))
         rows.append(row)
@@ -269,7 +290,7 @@ async def radio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data.startswith("dl:"):
         _, cat_key, item_id = data.split(":", 2)
-        item = load_data().get(cat_key, {}).get(item_id)
+        item = (load_data().get(cat_key) or {}).get(item_id)
         if not item:
             await safe_edit_text(query, "⚠️ لم يعد هذا المحتوى متاحًا.", BACK_RADIO)
             return
@@ -278,12 +299,12 @@ async def radio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = query.message.chat_id
         await context.bot.send_message(
             chat_id=chat_id,
-            text=f"📦 **المحتوى المطلوب:** {md_safe(item['title'])}",
+            text=f"📦 **المحتوى المطلوب:** {md_safe(item_title(item))}",
             parse_mode="Markdown",
         )
 
         failures = 0
-        for f in item.get("files", []):
+        for f in item.get("files") or []:
             t, fid, txt = f.get("type"), f.get("file_id"), f.get("text")
             try:
                 if t == "text":
@@ -303,7 +324,7 @@ async def radio_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await safe_delete_msg(context, chat_id, query.message.message_id)
 
-        footer = f"✨ **تم إرسال المحتوى:**\n📌 **{md_safe(item['title'])}**"
+        footer = f"✨ **تم إرسال المحتوى:**\n📌 **{md_safe(item_title(item))}**"
         if failures:
             footer += f"\n⚠️ تعذّر إرسال {failures} من العناصر (قد تكون محذوفة من تيليجرام)."
         nav = [[
@@ -326,7 +347,6 @@ async def admin_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["admin_origin"] = view
     context.user_data["admin_target_cat"] = ADD_TARGET.get(view, "broadcasts")
     context.user_data["admin_files_batch"] = []
-    context.user_data.pop("prompt_msg_id", None)
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ اكتفيت، انتقل للعنوان", callback_data="adm_done_files")],
@@ -363,8 +383,7 @@ async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT
         await msg.reply_text("⚠️ نوع الملف غير مدعوم، أرسل نصًا أو صورة أو فيديو أو صوت أو مستند.")
         return ADMIN_WAITING_FILES
 
-    if "prompt_msg_id" in context.user_data:
-        await safe_delete_msg(context, chat_id, context.user_data["prompt_msg_id"])
+    await drop_old_panel(context)  # الواجهة السابقة (شاشة الإضافة أو رسالة الاستلام السابقة)
 
     batch.append({"file_id": fid, "type": ftype, "text": txt})
     context.user_data["admin_files_batch"] = batch
@@ -378,7 +397,7 @@ async def admin_receive_files_step(update: Update, context: ContextTypes.DEFAULT
         reply_markup=kb,
         parse_mode="Markdown",
     )
-    context.user_data["prompt_msg_id"] = new_msg.message_id
+    track_panel(context, new_msg)
     return ADMIN_WAITING_FILES
 
 
@@ -418,6 +437,7 @@ async def admin_save_file_step(update: Update, context: ContextTypes.DEFAULT_TYP
     _sync_async()
     context.user_data.clear()
 
+    await drop_old_panel(context)  # شاشة طلب العنوان
     done_msg = await context.bot.send_message(
         chat_id,
         f"🎉 **تمت الإضافة بنجاح!**\n📌 **العنوان:** `{title}`",
@@ -479,7 +499,7 @@ async def manage_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await render_manage(query, view, page, notice="⚠️ هذا العنصر لم يعد موجودًا.")
         return
 
-    title = db[cat][iid]["title"]
+    title = item_title(db[cat][iid])
     safe_title = md_safe(title)
 
     if op == "del":  # شاشة تأكيد قبل الحذف النهائي

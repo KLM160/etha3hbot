@@ -122,3 +122,17 @@ async def drop_old_panel(context: ContextTypes.DEFAULT_TYPE) -> None:
             await safe_delete_msg(context, chat_id, msg_id)
     except Exception as e:  # noqa: BLE001
         logger.debug("تعذّر حذف الشاشة القديمة: %s", e)
+
+
+def claim_panel(context: ContextTypes.DEFAULT_TYPE, message) -> bool:
+    """هل هذه الرسالة هي الواجهة الفعّالة؟
+    إن لم تكن هناك واجهة مسجّلة (مثلاً بعد إعادة تشغيل البوت) تصبح هذه الرسالة هي الفعّالة."""
+    try:
+        current = (message.chat.id, message.message_id)
+    except AttributeError:
+        return True
+    saved = context.application.bot_data.get(PANEL_KEY)
+    if saved is None:
+        context.application.bot_data[PANEL_KEY] = current
+        return True
+    return tuple(saved) == current
