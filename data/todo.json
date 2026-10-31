@@ -10,9 +10,9 @@
         {
             "id": "t2",
             "text": "جزء عم",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-10-31",
-            "done_at": null
+            "done_at": "2026-10-31"
         },
         {
             "id": "t3",
