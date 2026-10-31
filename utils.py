@@ -5,17 +5,36 @@ import logging
 import os
 import threading
 import time
+from datetime import date, datetime
 from typing import Any, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import requests
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest, TelegramError
 from telegram.ext import CallbackQueryHandler, ContextTypes
 
-from config import DATA_DIR, GH_BRANCH, GH_REPO, GH_TOKEN, ITEMS_PER_PAGE
+from config import DATA_DIR, GH_BRANCH, GH_DATA_DIR, GH_REPO, GH_TOKEN, ITEMS_PER_PAGE, TZ_NAME
 
 logger = logging.getLogger("bot.utils")
 _JSON_LOCK = threading.Lock()
+
+# ----------------------------- التوقيت (الرياض) -----------------------------
+# القاعدة: في الأقسام لا datetime.now() ولا date.today() مباشرة؛ استخدم الدوال التالية.
+TZ = ZoneInfo(TZ_NAME)
+
+
+def now() -> datetime:
+    return datetime.now(TZ)
+
+
+def today() -> date:
+    return now().date()
+
+
+def today_str() -> str:
+    """YYYY-MM-DD"""
+    return today().isoformat()
 
 
 # ----------------------------- تيليجرام -----------------------------
@@ -109,7 +128,7 @@ def load_json(filename: str, default: Any) -> Any:
 
 
 def save_json(filename: str, data: Any) -> None:
-    """يكتب data/<filename> كتابة ذرية."""
+    """يكتب data/<filename> كتابة ذرية، ثم يرفعه إلى GitHub في الخلفية (إن كانت المزامنة مفعّلة)."""
     os.makedirs(DATA_DIR, exist_ok=True)
     path = os.path.join(DATA_DIR, filename)
     with _JSON_LOCK:
@@ -117,6 +136,18 @@ def save_json(filename: str, data: Any) -> None:
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
         os.replace(tmp, path)
+    if github_enabled():
+        threading.Thread(target=_push_data_file, args=(filename, path), daemon=True).start()
+
+
+def _push_data_file(filename: str, local_path: str) -> None:
+    """يرفع ملف data/<filename> إلى GitHub؛ أي فشل يُسجَّل في اللوج فقط."""
+    try:
+        ok, msg = github_push(local_path, f"{GH_DATA_DIR}/{filename}", f"💾 تحديث {filename} [skip render]")
+        if not ok:
+            logger.warning("تعذّر رفع %s إلى GitHub: %s", filename, msg)
+    except Exception:  # noqa: BLE001
+        logger.exception("خطأ غير متوقع عند رفع %s", filename)
 
 
 # ------------------------ شاشة التحكم الفعّالة ------------------------
@@ -260,3 +291,45 @@ def github_push(local_path: str, repo_path: str, message: str) -> Tuple[bool, st
                 logger.exception("GitHub خطأ غير متوقع")
                 return False, f"خطأ غير متوقع: {e}"
         return False, last
+
+
+def github_list(repo_dir: str) -> list:
+    """أسماء ملفات .json داخل مجلد في المستودع، أو [] مع تحذير عند أي فشل."""
+    if not github_enabled():
+        return []
+    try:
+        res = requests.get(_gh_url(repo_dir), headers=_gh_headers(), params=_gh_params(), timeout=20)
+    except requests.RequestException as e:
+        logger.warning("تعذّر الاتصال بـ GitHub عند سرد %s: %s", repo_dir, e)
+        return []
+    if res.status_code != 200:
+        logger.warning("فشل سرد %s من GitHub: %s", repo_dir, _gh_error(res))
+        return []
+    try:
+        items = res.json()
+    except ValueError as e:
+        logger.warning("ردّ غير متوقع عند سرد %s: %s", repo_dir, e)
+        return []
+    if not isinstance(items, list):
+        logger.warning("%s في المستودع ليس مجلدًا.", repo_dir)
+        return []
+    return [i["name"] for i in items if i.get("type") == "file" and str(i.get("name", "")).endswith(".json")]
+
+
+def restore_data_dir() -> None:
+    """يجلب كل ملفات .json من GH_DATA_DIR إلى DATA_DIR (نسخة GitHub هي المرجع)؛ لا يحذف أي ملف محلي."""
+    for name in github_list(GH_DATA_DIR):
+        content = github_pull(f"{GH_DATA_DIR}/{name}")
+        if content is None:
+            continue  # تعذّر الجلب: تبقى النسخة المحلية إن وُجدت
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            path = os.path.join(DATA_DIR, name)
+            with _JSON_LOCK:
+                tmp = f"{path}.tmp"
+                with open(tmp, "wb") as f:
+                    f.write(content)
+                os.replace(tmp, path)
+            logger.info("✅ استُعيد %s من GitHub", name)
+        except OSError as e:
+            logger.error("تعذّرت استعادة %s: %s", name, e)

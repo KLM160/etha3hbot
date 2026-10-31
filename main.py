@@ -21,6 +21,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    Defaults,
     TypeHandler,
 )
 
@@ -31,7 +32,7 @@ import quran
 import radio
 import todo
 import workout
-from utils import claim_panel, drop_old_panel, grid, safe_delete_msg, safe_edit_text, track_panel
+from utils import TZ, claim_panel, drop_old_panel, grid, restore_data_dir, safe_delete_msg, safe_edit_text, track_panel
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 # httpx يطبع روابط الطلبات وفيها توكن البوت — نخفيها من لوج Render
@@ -124,8 +125,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def post_init(app) -> None:
-    """يجلب أحدث أرشيف من GitHub، ثم يضبط أوامر البوت عند كل تشغيل."""
+    """يجلب أحدث أرشيف وملفات data من GitHub، ثم يضبط أوامر البوت عند كل تشغيل."""
     await asyncio.to_thread(radio.restore_from_github)
+    await asyncio.to_thread(restore_data_dir)
     try:
         await app.bot.delete_my_commands()  # يمسح النطاق الافتراضي فقط فلا تظهر أوامر لغير المالك
         await app.bot.set_my_commands(
@@ -163,7 +165,7 @@ def run_dummy_server():
 
 def main():
     threading.Thread(target=run_dummy_server, daemon=True).start()
-    app = ApplicationBuilder().token(TOKEN).post_init(post_init).build()
+    app = ApplicationBuilder().token(TOKEN).defaults(Defaults(tzinfo=TZ)).post_init(post_init).build()
 
     app.add_handler(TypeHandler(Update, owner_guard), group=-1)  # 🔒 حارس المالك
     # group=1: محادثة الإضافة في radio.py تلتقط /start في group=0 لتُنهي نفسها، ثم تعمل start مستقلة هنا
