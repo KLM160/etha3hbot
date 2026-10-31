@@ -41,6 +41,13 @@
             "completed": false,
             "created_at": "2026-10-31",
             "done_at": null
+        },
+        {
+            "id": "t7",
+            "text": "مذكرة الكفايات والتاريخ",
+            "completed": false,
+            "created_at": "2026-10-31",
+            "done_at": null
         }
     ],
     "ratings": {},
