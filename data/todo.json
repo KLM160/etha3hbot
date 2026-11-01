@@ -38,9 +38,9 @@
         {
             "id": "t6",
             "text": "المنصة",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-01",
-            "done_at": null
+            "done_at": "2026-11-01"
         }
     ],
     "ratings": {
