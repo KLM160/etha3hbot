@@ -23,7 +23,7 @@ def _clean_repo(value):
 
 GH_REPO = _clean_repo(os.environ.get("GH_REPO"))                      # owner/repo
 GH_BRANCH = (os.environ.get("GH_BRANCH") or "").strip() or None       # فارغ = الفرع الافتراضي
-GH_DATA_PATH = (os.environ.get("GH_DATA_PATH") or "data.json").strip().lstrip("/")  # مسار data.json في المستودع
+GH_DATA_PATH = (os.environ.get("GH_DATA_PATH") or "data/radio.json").strip().lstrip("/")  # مسار radio.json في المستودع
 GH_DATA_DIR = (os.environ.get("GH_DATA_DIR") or "data").strip().strip("/")
 
 # 🔒 البوت خاص بالمالك فقط
@@ -31,5 +31,5 @@ ALLOWED_USER_ID = 8912887919
 OWNER_NAME = "حامد"
 
 ITEMS_PER_PAGE = 8  # عدد الأزرار في كل صفحة من القوائم
-DATA_DIR = "data"   # ملفات json للأقسام الجديدة (الإذاعة تستخدم data.json في الجذر)
+DATA_DIR = "data"   # ملفات json للأقسام الجديدة (الإذاعة تستخدم data/radio.json)
 TZ_NAME = os.environ.get("TZ_NAME", "Asia/Riyadh")

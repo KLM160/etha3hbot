@@ -3,6 +3,8 @@
 - البيانات: data/todo.json عبر load_json/save_json (يرفع إلى GitHub تلقائيًا). التوقيت: الرياض فقط.
 - كل callback_data يبدأ بـ todo_ (ما عدا main و noop العامين).
 - التذكير اليومي 21:00 عبر app.job_queue داخل register(app).
+- ترحيل يومي (توقيت الرياض): عند أول قراءة في يوم جديد (ومهمة 00:01) تُحذف المهام المكتملة في أيام سابقة،
+  وتُحفظ أعدادها في done_stats لتبقى الإحصائيات دقيقة؛ وتبقى غير المنجزة وتنتقل لليوم الحالي (last_cleanup).
 نقطة الربط مع main.py: TITLE و MENU و register(app).
 """
 import logging
@@ -57,6 +59,7 @@ BTN_TEXT_LEN = 40    # طول نص المهمة على الزر
 BAR_LEN = 10         # طول شريط التقدم
 ARCHIVE_SHOW = 24    # أقصى عدد أشهر تُعرض في الأرشيف
 REMINDER_TIME = time(21, 0, tzinfo=TZ)
+ROLLOVER_TIME = time(0, 1, tzinfo=TZ)  # الترحيل اليومي بعد منتصف الليل
 
 WAITING_TASKS = 0
 
@@ -159,7 +162,7 @@ async def _send_panel(context, chat_id: int, text: str, kb: InlineKeyboardMarkup
 # البيانات
 # ----------------------------------------------------------------------------
 def _default() -> dict:
-    return {"tasks": [], "ratings": {}, "monthly_archive": {}}
+    return {"tasks": [], "ratings": {}, "monthly_archive": {}, "done_stats": {}, "last_cleanup": ""}
 
 
 def _task_num(tid) -> int:
@@ -227,11 +230,97 @@ def _normalize(raw) -> dict:
             except (KeyError, TypeError, ValueError):
                 continue
     db["monthly_archive"] = archive
+
+    # إحصائيات المنجز اليومية (تبقى حتى بعد حذف المهام المكتملة)
+    stats = {}
+    if isinstance(db.get("done_stats"), dict):
+        for k, v in db["done_stats"].items():
+            if parse_iso(k) is None or isinstance(v, bool):
+                continue
+            try:
+                n = int(v)
+            except (TypeError, ValueError):
+                continue
+            if n > 0:
+                stats[str(k)] = n
+    db["done_stats"] = stats
+
+    # تاريخ آخر تصفية/ترحيل
+    last = db.get("last_cleanup")
+    db["last_cleanup"] = str(last) if parse_iso(last) else ""
     return db
 
 
+# ----------------------------------------------------------------------------
+# الترحيل اليومي وتنظيف المهام المنجزة
+# ----------------------------------------------------------------------------
+_PENDING_NOTICE: list = []  # ملاحظة الترحيل تُعرض مرة واحدة في أول شاشة مهام
+
+
+def _merge_notice(notice: str = "") -> str:
+    """يدمج ملاحظة الترحيل المعلّقة (مرة واحدة) مع ملاحظة الشاشة."""
+    parts = list(_PENDING_NOTICE)
+    _PENDING_NOTICE.clear()
+    if notice:
+        parts.append(notice)
+    return "\n".join(parts)
+
+
+def _record_done(db: dict, tasks: list) -> int:
+    """يضيف المهام المكتملة إلى done_stats[يوم الإنجاز] قبل حذفها. يرجع عدد ما سُجّل."""
+    stats = db["done_stats"]
+    n = 0
+    for t in tasks:
+        day = t.get("done_at")
+        if t.get("completed") and parse_iso(day):
+            stats[day] = stats.get(day, 0) + 1
+            n += 1
+    return n
+
+
+def done_in_range(db: dict, lo: str, hi: str) -> int:
+    """عدد المنجز بين تاريخين (شاملين): المحذوف المحفوظ في done_stats + المكتمل الظاهر في القائمة."""
+    total = sum(v for k, v in db["done_stats"].items() if lo <= k <= hi)
+    total += sum(1 for t in db["tasks"] if t["completed"] and t.get("done_at") and lo <= t["done_at"] <= hi)
+    return total
+
+
+def daily_cleanup(db: dict) -> bool:
+    """إذا دخل يوم جديد (الرياض) بعد آخر تصفية: يحذف المكتملة من أيام سابقة مع حفظ إحصائيتها،
+    وتبقى غير المنجزة (تنتقل لليوم الحالي)، ثم يحدّث last_cleanup. يرجع True إن تغيّر شيء."""
+    today_iso = today_str()
+    last = db.get("last_cleanup") or ""
+    if last and today_iso <= last:
+        return False
+
+    kept, purged = [], []
+    for t in db["tasks"]:
+        if t["completed"] and not (t.get("done_at") and t["done_at"] >= today_iso):
+            purged.append(t)  # أُنجزت قبل اليوم (أو بلا تاريخ إنجاز صالح)
+        else:
+            kept.append(t)
+
+    _record_done(db, purged)
+    carried = sum(1 for t in kept if not t["completed"] and str(t.get("created_at")) < today_iso)
+    db["tasks"] = kept
+    db["last_cleanup"] = today_iso
+
+    parts = []
+    if purged:
+        parts.append(f"🧹 نُظّفت منجزات الأيام السابقة ({tasks_word(len(purged))}) وإحصائياتها محفوظة.")
+    if carried:
+        parts.append(f"🔄 رُحّل المتبقي إلى اليوم ({tasks_word(carried)}).")
+    if parts:
+        _PENDING_NOTICE.append("\n".join(parts))
+    return True
+
+
 def load_db() -> dict:
-    return _normalize(load_json(DATA_FILE, _default()))
+    """يقرأ البيانات ويطبّعها، ويجري الترحيل اليومي (ويحفظ) عند دخول يوم جديد."""
+    db = _normalize(load_json(DATA_FILE, _default()))
+    if daily_cleanup(db):
+        save_db(db)
+    return db
 
 
 def save_db(db: dict) -> None:
@@ -355,13 +444,15 @@ def build_menu(db: dict, page: int = 0, notice: str = ""):
 
 
 async def render_menu(query, page: int = 0, notice: str = "") -> None:
-    text, kb = build_menu(load_archived(), page, notice)
+    db = load_archived()
+    text, kb = build_menu(db, page, _merge_notice(notice))
     await safe_edit_text(query, text, kb)
 
 
 async def send_menu(context, chat_id: int, notice: str = "") -> None:
     """drop_old_panel ثم شاشة القسم الجديدة ثم track_panel."""
-    text, kb = build_menu(load_archived(), 0, notice)
+    db = load_archived()
+    text, kb = build_menu(db, 0, _merge_notice(notice))
     await drop_old_panel(context)
     await _send_panel(context, chat_id, text, kb)
 
@@ -499,6 +590,7 @@ def earliest_week(db: dict) -> date:
     candidates = [RATING_START]
     candidates += [d for d in (parse_iso(k) for k in db["ratings"]) if d]
     candidates += [d for d in (parse_iso(t.get("done_at")) for t in db["tasks"]) if d]
+    candidates += [d for d in (parse_iso(k) for k in db["done_stats"]) if d]
     return min(week_start_of(min(candidates)), week_start_of(today()))
 
 
@@ -543,9 +635,7 @@ def build_week(db: dict, start: date):
         text += "🌱 لا توجد تقييمات في هذا الأسبوع بعد.\n"
 
     s_iso, e_iso = start.isoformat(), end.isoformat()
-    done_count = sum(
-        1 for t in db["tasks"] if t["completed"] and t.get("done_at") and s_iso <= t["done_at"] <= e_iso
-    )
+    done_count = done_in_range(db, s_iso, e_iso)
     text += f"✅ المهام المنجزة: {done_count}"
 
     nav = []
@@ -566,6 +656,7 @@ def build_month(db: dict):
         return text + f"⏳ {before_start_sentence()}، وستظهر إحصائيات الشهر بعدها.", STATS_BACK_KB
 
     month_key = f"{t.year}-{t.month:02d}"
+    month_done = done_in_range(db, f"{month_key}-01", f"{month_key}-31")
     first = max(date(t.year, t.month, 1), RATING_START)
     # الأيام المنقضية: حتى أمس، ويُحتسب اليوم فقط إذا قُيِّم
     last = t if t.isoformat() in ratings else t - timedelta(days=1)
@@ -584,6 +675,7 @@ def build_month(db: dict):
 
     if not rated:
         text += "🌱 لا توجد تقييمات هذا الشهر بعد."
+        text += f"\n✅ المهام المنجزة: {month_done}"
         if missing:
             text += f"\n⚠️ أيام بلا تقييم: {len(missing)}"
         return text, STATS_BACK_KB
@@ -598,6 +690,7 @@ def build_month(db: dict):
         f"🎯 المجموع: {total}/{maximum}\n"
         f"{bar(total, maximum)} {pct_of(total, maximum)}%\n"
         f"📈 المتوسط: {total / len(rated):.1f}/{MAX_SCORE}\n"
+        f"✅ المهام المنجزة: {month_done}\n"
         f"🏆 أفضل يوم: {fmt_date(date.fromisoformat(best[0]), False)} ({best[1]}/{MAX_SCORE})\n"
         f"📉 أسوأ يوم: {fmt_date(date.fromisoformat(worst[0]), False)} ({worst[1]}/{MAX_SCORE})\n"
     )
@@ -619,7 +712,9 @@ def build_archive(db: dict):
     keys = sorted(archive, reverse=True)  # الأحدث أولًا
     for k in keys[:ARCHIVE_SHOW]:
         e = archive[k]
-        text += f"📆 {k} ({MONTHS[int(k[5:])]}): {e['total_score']}/{e['max_score']} • {pct_of(e['total_score'], e['max_score'])}%\n"
+        done_n = done_in_range(db, f"{k}-01", f"{k}-31")
+        done_txt = f" • ✅ {done_n}" if done_n else ""
+        text += f"📆 {k} ({MONTHS[int(k[5:])]}): {e['total_score']}/{e['max_score']} • {pct_of(e['total_score'], e['max_score'])}%{done_txt}\n"
     if len(keys) > ARCHIVE_SHOW:
         text += f"\n… و{len(keys) - ARCHIVE_SHOW} أشهر أقدم"
     return text.rstrip(), STATS_BACK_KB
@@ -678,6 +773,7 @@ async def todo_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if task is None:
             await render_delete(query, page, "⚠️ هذه المهمة لم تعد موجودة.")
             return
+        _record_done(db, [task])  # إن كانت مكتملة تبقى في الإحصائيات
         db["tasks"] = [t for t in db["tasks"] if t["id"] != task["id"]]
         save_db(db)
         notice = f"🗑️ تم حذف: {md_safe(short(task['text'], 60))}"
@@ -705,6 +801,7 @@ async def todo_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db = load_db()
         count = sum(1 for t in db["tasks"] if t["completed"])
         if count:
+            _record_done(db, [t for t in db["tasks"] if t["completed"]])
             db["tasks"] = [t for t in db["tasks"] if not t["completed"]]
             save_db(db)
         await render_menu(query, 0, f"🧹 تم مسح {tasks_word(count)} مكتملة." if count else "ℹ️ لا توجد مهام مكتملة لمسحها.")
@@ -896,6 +993,14 @@ async def rating_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
         logger.exception("خطأ غير متوقع في تذكير التقييم")
 
 
+async def daily_rollover(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """00:01 الرياض: يجري الترحيل/التنظيف دون انتظار فتح القائمة (load_db يحفظ عند دخول يوم جديد)."""
+    try:
+        load_archived()
+    except Exception:  # noqa: BLE001
+        logger.exception("خطأ غير متوقع في الترحيل اليومي")
+
+
 # ----------------------------------------------------------------------------
 # الربط مع main.py
 # ----------------------------------------------------------------------------
@@ -928,3 +1033,4 @@ def register(app) -> None:
         logger.warning("⚠️ job_queue غير متاح (ثبّت python-telegram-bot[job-queue]): لن يعمل تذكير التقييم 21:00.")
     else:
         app.job_queue.run_daily(rating_reminder, time=REMINDER_TIME, name="todo_rating_reminder")
+        app.job_queue.run_daily(daily_rollover, time=ROLLOVER_TIME, name="todo_daily_rollover")

@@ -1,7 +1,7 @@
 """
 📻 الإذاعة المدرسية — أرشيف إذاعة ابن حميد
 --------------------------------------------------
-قسمان فقط (data.json):  "archive" = الأرشيف  |  "general_archive" = الأرشيف العام
+قسمان فقط (data/radio.json):  "archive" = الأرشيف  |  "general_archive" = الأرشيف العام
 - الملفات تُعرض مباشرة مع صفحات، والإضافة/الحذف/النقل من نفس صفحة التصفح.
 - كل تعديل يُحفظ محليًا ثم يُرفع إلى GitHub برسالة commit توضّح نوع التعديل.
 نقطة الربط مع main.py: TITLE و MENU و register(app) و restore_from_github().
@@ -25,7 +25,7 @@ from telegram.ext import (
     filters,
 )
 
-from config import ALLOWED_USER_ID, GH_DATA_PATH
+from config import ALLOWED_USER_ID, GH_DATA_DIR
 from utils import (
     build_paginated_keyboard,
     drop_old_panel,
@@ -48,7 +48,12 @@ logger = logging.getLogger("bot.radio")
 TITLE = "📻 الإذاعة المدرسية"
 MENU = "radio_menu"
 
-DATA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data.json")  # مسار ثابت مهما كان مجلد التشغيل
+DATA_FILE = "radio.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))     # مسار ثابت مهما كان مجلد التشغيل
+DATA_PATH = os.path.join(BASE_DIR, "data", DATA_FILE)     # محليًا: data/radio.json
+REPO_PATH = f"{GH_DATA_DIR}/{DATA_FILE}"                  # في GitHub: data/radio.json
+LEGACY_FILE = "data.json"                                 # الاسم القديم (للترحيل لمرة واحدة فقط)
+LEGACY_PATH = os.path.join(BASE_DIR, LEGACY_FILE)
 MAX_BATCH_FILES = 10
 MANAGE_PER_PAGE = 5
 
@@ -87,6 +92,7 @@ def _normalize(raw) -> tuple:
 
 
 def _save_locked(data: dict) -> None:
+    os.makedirs(os.path.dirname(DATA_PATH), exist_ok=True)  # مجلد data/ قد لا يوجد بعد
     tmp = f"{DATA_PATH}.tmp"
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
@@ -163,32 +169,68 @@ def parse_page(value) -> int:
 # ----------------------------------------------------------------------------
 # GitHub
 # ----------------------------------------------------------------------------
+def _local_is_empty() -> bool:
+    """True إن لم يوجد data/radio.json محليًا أو كان بلا أي عنصر."""
+    if not os.path.exists(DATA_PATH):
+        return True
+    try:
+        with open(DATA_PATH, "r", encoding="utf-8") as f:
+            data, _ = _normalize(json.load(f))
+    except Exception:  # noqa: BLE001
+        return True
+    return not any(data.values())
+
+
+def _migrate_local_legacy() -> None:
+    """ترحيل لمرة واحدة: data.json القديم (محليًا) ← data/radio.json إن كان الجديد غير موجود."""
+    if os.path.exists(DATA_PATH) or not os.path.exists(LEGACY_PATH):
+        return
+    try:
+        with open(LEGACY_PATH, "r", encoding="utf-8") as f:
+            data, _ = _normalize(json.load(f))
+        with DATA_LOCK:
+            _save_locked(data)
+        logger.info("✅ تم ترحيل %s إلى %s", LEGACY_FILE, DATA_PATH)
+    except Exception as e:  # noqa: BLE001
+        logger.error("تعذّر ترحيل %s: %s", LEGACY_PATH, e)
+
+
 def restore_from_github() -> None:
-    """عند التشغيل: يجلب آخر data.json من GitHub (قرص Render مؤقت ونسخة النشر قد تكون أقدم)."""
+    """عند التشغيل: يجلب آخر data/radio.json من GitHub (قرص Render مؤقت ونسخة النشر قد تكون أقدم)."""
+    _migrate_local_legacy()
     if not github_enabled():
         logger.warning("⚠️ GH_TOKEN/GH_REPO غير مضبوطين: لن تُحفظ تعديلات الأرشيف بعد إعادة التشغيل!")
         return
-    raw = github_pull(GH_DATA_PATH)
+
+    raw = github_pull(REPO_PATH)
+    migrated = False
+    if raw is None and _local_is_empty():  # أول تشغيل بعد التسمية: نجلب data.json القديم من الجذر
+        raw = github_pull(LEGACY_FILE)
+        migrated = raw is not None
+        if migrated:
+            logger.info("↪️ لا يوجد %s في GitHub بعد، سيُرحَّل المحتوى من %s.", REPO_PATH, LEGACY_FILE)
     if raw is None:
-        logger.warning("لم يتم جلب data.json من GitHub، سيُستخدم الملف المحلي.")
+        logger.warning("لم يتم جلب %s من GitHub، سيُستخدم الملف المحلي.", DATA_FILE)
         return
     try:
         remote = json.loads(raw.decode("utf-8"))
         if not isinstance(remote, dict):
             raise ValueError("بنية غير متوقعة")
     except Exception as e:  # noqa: BLE001
-        logger.error("data.json في GitHub غير صالح، سيُستخدم الملف المحلي: %s", e)
+        logger.error("%s في GitHub غير صالح، سيُستخدم الملف المحلي: %s", DATA_FILE, e)
         return
     data, was_legacy = _normalize(remote)
     with DATA_LOCK:
         _save_locked(data)
     logger.info("✅ تم تحميل أحدث أرشيف من GitHub.")
-    if was_legacy:  # نسخة GitHub بالشكل القديم: ننظّفها مرة واحدة
-        github_push(DATA_PATH, GH_DATA_PATH, "🧹 تنظيف: دمج الأقسام القديمة في «الأرشيف» [skip render]")
+    if migrated:  # رفع النسخة المرحَّلة إلى المسار الجديد data/radio.json
+        github_push(DATA_PATH, REPO_PATH, "🚚 ترحيل data.json إلى data/radio.json [skip render]")
+    elif was_legacy:  # نسخة GitHub بالشكل القديم: ننظّفها مرة واحدة
+        github_push(DATA_PATH, REPO_PATH, "🧹 تنظيف: دمج الأقسام القديمة في «الأرشيف» [skip render]")
 
 
 async def _sync_and_report(context, message: str) -> None:
-    ok, msg = await asyncio.to_thread(github_push, DATA_PATH, GH_DATA_PATH, message)
+    ok, msg = await asyncio.to_thread(github_push, DATA_PATH, REPO_PATH, message)
     if ok:
         return
     try:  # تنبيه صريح للمالك بدل الفشل الصامت
@@ -201,7 +243,7 @@ async def _sync_and_report(context, message: str) -> None:
 
 
 def sync(context, action: str) -> None:
-    """يرفع data.json في الخلفية؛ action = وصف التعديل ويصير رسالة الـ commit."""
+    """يرفع data/radio.json في الخلفية؛ action = وصف التعديل ويصير رسالة الـ commit."""
     task = asyncio.create_task(_sync_and_report(context, f"{action} [skip render]"))
     _BG_TASKS.add(task)
     task.add_done_callback(_BG_TASKS.discard)
