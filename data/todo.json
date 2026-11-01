@@ -43,7 +43,9 @@
             "done_at": null
         }
     ],
-    "ratings": {},
+    "ratings": {
+        "2026-11-01": 20
+    },
     "monthly_archive": {},
     "done_stats": {},
     "last_cleanup": "2026-11-01"
