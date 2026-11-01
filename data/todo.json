@@ -1,13 +1,5 @@
 {
-    "tasks": [
-        {
-            "id": "t1",
-            "text": "ربط النحل",
-            "completed": false,
-            "created_at": "2026-10-31",
-            "done_at": null
-        }
-    ],
+    "tasks": [],
     "ratings": {},
     "monthly_archive": {},
     "done_stats": {},
