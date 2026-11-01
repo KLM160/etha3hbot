@@ -31,9 +31,9 @@
         {
             "id": "t5",
             "text": "حفظ ثلاثة أوجه من الرعد",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-01",
-            "done_at": null
+            "done_at": "2026-11-01"
         },
         {
             "id": "t6",
