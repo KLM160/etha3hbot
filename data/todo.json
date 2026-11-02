@@ -1,13 +1,6 @@
 {
     "tasks": [
         {
-            "id": "t3",
-            "text": "جزء المجادلة",
-            "completed": true,
-            "created_at": "2026-11-01",
-            "done_at": "2026-11-02"
-        },
-        {
             "id": "t4",
             "text": "جزء المؤمنون",
             "completed": false,
@@ -34,27 +27,6 @@
             "completed": false,
             "created_at": "2026-11-02",
             "done_at": null
-        },
-        {
-            "id": "t8",
-            "text": "الآدمنز",
-            "completed": true,
-            "created_at": "2026-11-02",
-            "done_at": "2026-11-02"
-        },
-        {
-            "id": "t9",
-            "text": "تمرين",
-            "completed": true,
-            "created_at": "2026-11-02",
-            "done_at": "2026-11-02"
-        },
-        {
-            "id": "t10",
-            "text": "واجب الأحياء",
-            "completed": true,
-            "created_at": "2026-11-02",
-            "done_at": "2026-11-02"
         }
     ],
     "ratings": {
@@ -63,7 +35,8 @@
     },
     "monthly_archive": {},
     "done_stats": {
-        "2026-11-01": 4
+        "2026-11-01": 4,
+        "2026-11-02": 4
     },
-    "last_cleanup": "2026-11-02"
+    "last_cleanup": "2026-11-03"
 }
