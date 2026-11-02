@@ -1,15 +1,4 @@
 {
-    "archive": {
-        "item_1793644833_11caf501": {
-            "title": ".",
-            "files": [
-                {
-                    "file_id": null,
-                    "type": "text",
-                    "text": "."
-                }
-            ]
-        }
-    },
+    "archive": {},
     "general_archive": {}
 }
