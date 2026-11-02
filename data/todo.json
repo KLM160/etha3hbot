@@ -38,9 +38,9 @@
         {
             "id": "t8",
             "text": "الآدمنز",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-02",
-            "done_at": null
+            "done_at": "2026-11-02"
         },
         {
             "id": "t9",
