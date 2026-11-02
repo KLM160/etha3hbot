@@ -52,9 +52,9 @@
         {
             "id": "t10",
             "text": "واجب الأحياء",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-02",
-            "done_at": null
+            "done_at": "2026-11-02"
         }
     ],
     "ratings": {
