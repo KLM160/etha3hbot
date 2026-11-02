@@ -17,9 +17,9 @@
         {
             "id": "t6",
             "text": "وجه الرعد",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-02",
-            "done_at": null
+            "done_at": "2026-11-03"
         },
         {
             "id": "t7",
