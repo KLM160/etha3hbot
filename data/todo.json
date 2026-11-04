@@ -41,6 +41,20 @@
             "completed": false,
             "created_at": "2026-11-03",
             "done_at": null
+        },
+        {
+            "id": "t16",
+            "text": "تمرين",
+            "completed": false,
+            "created_at": "2026-11-04",
+            "done_at": null
+        },
+        {
+            "id": "t17",
+            "text": "منصة",
+            "completed": false,
+            "created_at": "2026-11-04",
+            "done_at": null
         }
     ],
     "ratings": {
