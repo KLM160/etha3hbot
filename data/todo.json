@@ -1,13 +1,6 @@
 {
     "tasks": [
         {
-            "id": "t12",
-            "text": "دروس رياضيات",
-            "completed": false,
-            "created_at": "2026-11-03",
-            "done_at": null
-        },
-        {
             "id": "t13",
             "text": "حل رياضيات",
             "completed": false,
