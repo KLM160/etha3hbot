@@ -3,9 +3,9 @@
         {
             "id": "t18",
             "text": "إتمام سورة الرعد",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-05",
-            "done_at": null
+            "done_at": "2026-11-07"
         },
         {
             "id": "t19",
