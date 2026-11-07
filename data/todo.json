@@ -17,9 +17,9 @@
         {
             "id": "t20",
             "text": "ربط يوسف والرعد",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-06",
-            "done_at": null
+            "done_at": "2026-11-07"
         },
         {
             "id": "t21",
