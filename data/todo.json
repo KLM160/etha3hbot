@@ -20,6 +20,34 @@
             "completed": true,
             "created_at": "2026-11-06",
             "done_at": "2026-11-07"
+        },
+        {
+            "id": "t21",
+            "text": "ربط يوسف والرعد",
+            "completed": false,
+            "created_at": "2026-11-07",
+            "done_at": null
+        },
+        {
+            "id": "t22",
+            "text": "إبراهيم والحجر والنحل",
+            "completed": false,
+            "created_at": "2026-11-07",
+            "done_at": null
+        },
+        {
+            "id": "t23",
+            "text": "جزء الأحقاف",
+            "completed": false,
+            "created_at": "2026-11-07",
+            "done_at": null
+        },
+        {
+            "id": "t24",
+            "text": "جزء المؤمنون",
+            "completed": false,
+            "created_at": "2026-11-07",
+            "done_at": null
         }
     ],
     "ratings": {
