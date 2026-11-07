@@ -20,13 +20,6 @@
             "completed": true,
             "created_at": "2026-11-06",
             "done_at": "2026-11-07"
-        },
-        {
-            "id": "t21",
-            "text": "مراجعة إبراهيم والحجر والنحل",
-            "completed": false,
-            "created_at": "2026-11-06",
-            "done_at": null
         }
     ],
     "ratings": {
