@@ -1,13 +1,6 @@
 {
     "tasks": [
         {
-            "id": "t24",
-            "text": "جزء المؤمنون",
-            "completed": false,
-            "created_at": "2026-11-07",
-            "done_at": null
-        },
-        {
             "id": "t25",
             "text": "جزء العنكبوت",
             "completed": false,
