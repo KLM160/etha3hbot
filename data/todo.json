@@ -10,9 +10,9 @@
         {
             "id": "t22",
             "text": "إبراهيم والحجر والنحل",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-07",
-            "done_at": null
+            "done_at": "2026-11-08"
         },
         {
             "id": "t23",
