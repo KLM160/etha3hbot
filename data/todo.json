@@ -1,5 +1,27 @@
 {
-    "tasks": [],
+    "tasks": [
+        {
+            "id": "t1",
+            "text": "النور",
+            "completed": false,
+            "created_at": "2026-11-09",
+            "done_at": null
+        },
+        {
+            "id": "t2",
+            "text": "محمد والأحقاف",
+            "completed": false,
+            "created_at": "2026-11-09",
+            "done_at": null
+        },
+        {
+            "id": "t3",
+            "text": "لقمان والسجدة",
+            "completed": false,
+            "created_at": "2026-11-09",
+            "done_at": null
+        }
+    ],
     "ratings": {
         "2026-11-01": 20,
         "2026-11-02": 20,
