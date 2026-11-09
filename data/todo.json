@@ -8,20 +8,6 @@
             "done_at": null
         },
         {
-            "id": "t2",
-            "text": "محمد والأحقاف",
-            "completed": true,
-            "created_at": "2026-11-09",
-            "done_at": "2026-11-09"
-        },
-        {
-            "id": "t3",
-            "text": "لقمان والسجدة",
-            "completed": true,
-            "created_at": "2026-11-09",
-            "done_at": "2026-11-09"
-        },
-        {
             "id": "t4",
             "text": "جزء الإسراء",
             "completed": false,
@@ -48,13 +34,6 @@
             "completed": false,
             "created_at": "2026-11-09",
             "done_at": null
-        },
-        {
-            "id": "t8",
-            "text": "ربط",
-            "completed": true,
-            "created_at": "2026-11-09",
-            "done_at": "2026-11-09"
         }
     ],
     "ratings": {
@@ -76,7 +55,8 @@
         "2026-11-04": 1,
         "2026-11-06": 1,
         "2026-11-07": 3,
-        "2026-11-08": 2
+        "2026-11-08": 2,
+        "2026-11-09": 3
     },
-    "last_cleanup": "2026-11-09"
+    "last_cleanup": "2026-11-10"
 }
