@@ -1,5 +1,69 @@
 {
-    "tasks": [],
+    "tasks": [
+        {
+            "id": "t1",
+            "text": "جزء ١٦ (الكهف)",
+            "completed": false,
+            "created_at": "2026-11-10",
+            "done_at": null
+        },
+        {
+            "id": "t2",
+            "text": "جزء ١٧ (الأنبياء)",
+            "completed": false,
+            "created_at": "2026-11-10",
+            "done_at": null
+        },
+        {
+            "id": "t3",
+            "text": "جزء ١٨ (النور والفرقان)",
+            "completed": false,
+            "created_at": "2026-11-10",
+            "done_at": null
+        },
+        {
+            "id": "t4",
+            "text": "جزء ١٩ (الفرقان)",
+            "completed": false,
+            "created_at": "2026-11-10",
+            "done_at": null
+        },
+        {
+            "id": "t5",
+            "text": "جزء ٢٠ (النمل)",
+            "completed": false,
+            "created_at": "2026-11-10",
+            "done_at": null
+        },
+        {
+            "id": "t6",
+            "text": "جزء ٢٢ (الأحزاب)",
+            "completed": false,
+            "created_at": "2026-11-10",
+            "done_at": null
+        },
+        {
+            "id": "t7",
+            "text": "جزء ٢٥ (الشورى)",
+            "completed": false,
+            "created_at": "2026-11-10",
+            "done_at": null
+        },
+        {
+            "id": "t8",
+            "text": "جزء ٢٣ (يس)",
+            "completed": false,
+            "created_at": "2026-11-10",
+            "done_at": null
+        },
+        {
+            "id": "t9",
+            "text": "جزء ٢٤ (الزمر)",
+            "completed": false,
+            "created_at": "2026-11-10",
+            "done_at": null
+        }
+    ],
     "ratings": {
         "2026-11-01": 20,
         "2026-11-02": 20,
