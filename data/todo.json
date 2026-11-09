@@ -1,13 +1,5 @@
 {
-    "tasks": [
-        {
-            "id": "t7",
-            "text": "جزء الشورى",
-            "completed": false,
-            "created_at": "2026-11-09",
-            "done_at": null
-        }
-    ],
+    "tasks": [],
     "ratings": {
         "2026-11-01": 20,
         "2026-11-02": 20,
