@@ -1,13 +1,6 @@
 {
     "tasks": [
         {
-            "id": "t6",
-            "text": "جزء الأحزاب",
-            "completed": false,
-            "created_at": "2026-11-09",
-            "done_at": null
-        },
-        {
             "id": "t7",
             "text": "جزء الشورى",
             "completed": false,
