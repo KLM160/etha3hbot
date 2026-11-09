@@ -1,13 +1,6 @@
 {
     "tasks": [
         {
-            "id": "t1",
-            "text": "النور",
-            "completed": false,
-            "created_at": "2026-11-09",
-            "done_at": null
-        },
-        {
             "id": "t5",
             "text": "جزء الفرقان",
             "completed": false,
