@@ -10,9 +10,9 @@
         {
             "id": "t2",
             "text": "محمد والأحقاف",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-09",
-            "done_at": null
+            "done_at": "2026-11-09"
         },
         {
             "id": "t3",
