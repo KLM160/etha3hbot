@@ -1,13 +1,6 @@
 {
     "tasks": [
         {
-            "id": "t8",
-            "text": "جزء ٢٣ (يس)",
-            "completed": false,
-            "created_at": "2026-11-10",
-            "done_at": null
-        },
-        {
             "id": "t9",
             "text": "جزء ٢٤ (الزمر)",
             "completed": false,
