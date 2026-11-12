@@ -1,13 +1,6 @@
 {
     "tasks": [
         {
-            "id": "t6",
-            "text": "جزء ٢٢ (الأحزاب)",
-            "completed": false,
-            "created_at": "2026-11-10",
-            "done_at": null
-        },
-        {
             "id": "t7",
             "text": "جزء ٢٥ (الشورى)",
             "completed": false,
