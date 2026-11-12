@@ -1,13 +1,6 @@
 {
     "tasks": [
         {
-            "id": "t3",
-            "text": "جزء ١٨ (النور والفرقان)",
-            "completed": false,
-            "created_at": "2026-11-10",
-            "done_at": null
-        },
-        {
             "id": "t4",
             "text": "جزء ١٩ (الفرقان)",
             "completed": false,
