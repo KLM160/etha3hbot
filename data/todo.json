@@ -1,5 +1,55 @@
 {
-    "tasks": [],
+    "tasks": [
+        {
+            "id": "t1",
+            "text": "المنصة",
+            "completed": false,
+            "created_at": "2026-11-13",
+            "done_at": null
+        },
+        {
+            "id": "t2",
+            "text": "الربط",
+            "completed": false,
+            "created_at": "2026-11-13",
+            "done_at": null
+        },
+        {
+            "id": "t3",
+            "text": "حلول المنصة",
+            "completed": false,
+            "created_at": "2026-11-13",
+            "done_at": null
+        },
+        {
+            "id": "t4",
+            "text": "جزء المؤمنون",
+            "completed": false,
+            "created_at": "2026-11-13",
+            "done_at": null
+        },
+        {
+            "id": "t5",
+            "text": "تمرين",
+            "completed": false,
+            "created_at": "2026-11-13",
+            "done_at": null
+        },
+        {
+            "id": "t6",
+            "text": "انجليزي",
+            "completed": false,
+            "created_at": "2026-11-13",
+            "done_at": null
+        },
+        {
+            "id": "t7",
+            "text": "اختبار رياضيات",
+            "completed": false,
+            "created_at": "2026-11-13",
+            "done_at": null
+        }
+    ],
     "ratings": {
         "2026-11-01": 20,
         "2026-11-02": 20,
