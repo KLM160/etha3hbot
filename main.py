@@ -11,9 +11,17 @@ import logging
 import os
 import random
 import threading
+from typing import Optional
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from telegram import BotCommand, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import (
+    BotCommand,
+    BotCommandScopeChat,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LinkPreviewOptions,
+    Update,
+)
 from telegram.error import TelegramError
 from telegram.ext import (
     ApplicationBuilder,
@@ -25,14 +33,14 @@ from telegram.ext import (
     TypeHandler,
 )
 
-from config import ALLOWED_USER_ID, OWNER_NAME, TOKEN
+from config import ALLOWED_USER_ID, HOME_IMAGE_ABOVE, HOME_IMAGE_URL, OWNER_NAME, TOKEN
 import english
 import qudrat
 import quran
 import radio
 import todo
 import workout
-from utils import TZ, claim_panel, drop_old_panel, grid, restore_data_dir, safe_delete_msg, safe_edit_text, track_panel
+from utils import TZ, claim_panel, drop_old_panel, grid, now, restore_data_dir, safe_delete_msg, safe_edit_text, today, today_str, track_panel
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 # httpx يطبع روابط الطلبات وفيها توكن البوت — نخفيها من لوج Render
@@ -44,13 +52,13 @@ logger = logging.getLogger("bot")
 SECTIONS = [todo, quran, english, qudrat, workout, radio]
 
 MOTIVATION = [
-    "Create your own effect. Every single day counts. ⏳",
-    "No weakness here. Push forward towards KFUPM! 🥊",
-    "Small daily victories lead to ultimate success. 💪",
-    "Stay continuous, stay focused. One Day is built today. 🎯",
-    "Work hard in silence, let your results make the noise. ✨",
-    "Discipline today, freedom tomorrow. Keep building. 🔥",
-    "You're not behind. You're building. Keep going. 🚀",
+    "Create your own effect. ⏳",
+    "No weakness here. Push forward! 🥊",
+    "Small daily victories, big success. 💪",
+    "One Day is built today. 🎯",
+    "Work hard in silence. ✨",
+    "Discipline today, freedom tomorrow. 🔥",
+    "You're not behind. You're building. 🚀",
 ]
 
 
@@ -71,14 +79,63 @@ async def owner_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raise ApplicationHandlerStop
 
 
+def home_preview() -> Optional[LinkPreviewOptions]:
+    """معاينة الصورة في الرئيسية (None إن لم يُضبط HOME_IMAGE_URL فيعمل البوت بدون صورة)."""
+    if not HOME_IMAGE_URL:
+        return None
+    return LinkPreviewOptions(
+        url=HOME_IMAGE_URL,
+        prefer_large_media=True,
+        show_above_text=HOME_IMAGE_ABOVE,
+    )
+
+
+def live_status() -> str:
+    """الشاشة الحية: تقييم اليوم + مهام اليوم. أي خطأ في القراءة لا يكسر الرئيسية."""
+    try:
+        db = todo.load_archived()  # استيراد todo هنا آمن: todo لا يستورد main
+        today_iso = today_str()
+
+        # ⭐ تقييم اليوم
+        if today() < todo.RATING_START:
+            rating = f"⭐ **تقييم اليوم:** {todo.before_start_sentence()}"
+        elif today_iso in db["ratings"]:
+            score = db["ratings"][today_iso]
+            rating = (
+                f"⭐ **تقييم اليوم:** {score}/{todo.MAX_SCORE}\n"
+                f"{todo.bar(score, todo.MAX_SCORE)} {todo.pct_of(score, todo.MAX_SCORE)}%"
+            )
+        else:
+            rating = "⭐ **تقييم اليوم:** لم يُقيَّم بعد"
+        pending = todo.pending_dates(db)
+        if pending:
+            rating += f"\n📌 أيام سابقة غير مقيَّمة: {todo.days_word(len(pending))}"
+
+        # ✅ مهام اليوم (المنجز اليوم يشمل ما مُسح من المكتملة عبر done_stats)
+        done = todo.done_in_range(db, today_iso, today_iso)
+        left = sum(1 for t in db["tasks"] if not t["completed"])
+        total = done + left
+        if total:
+            tasks = f"✅ **مهام اليوم:** {done} من {total}{' 🎉' if left == 0 else ''}\n{todo.bar(done, total)}"
+        else:
+            tasks = "✅ **مهام اليوم:** لا توجد مهام"
+        return f"{rating}\n\n{tasks}"
+    except Exception:  # noqa: BLE001
+        logger.exception("تعذّر بناء الشاشة الحية")
+        return ""
+
+
 def home_text() -> str:
+    n = now()
+    live = live_status()
     return (
         "**يوماً ما | One Day ⏳💪**\n"
         "━━━━━━━ • ✨ • ━━━━━━━\n\n"
         f"يا هلا {OWNER_NAME} 👋\n"
-        "يومك الجديد بدأ، وكل خطوة اليوم تقرّبك من حلمك. خلّنا نصنع أثرنا 💪\n\n"
         f"🔥 {random.choice(MOTIVATION)}\n\n"
-        "👇 اختر القسم:"
+        f"📅 {todo.fmt_date(n.date())} • 🕒 {todo.fmt_time(n)}\n\n"
+        + (f"{live}\n\n" if live else "")
+        + "👇 اختر القسم:"
     )
 
 
@@ -100,7 +157,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
 
     if query:  # رجوع للرئيسية: تعديل في نفس الرسالة
-        await safe_edit_text(query, home_text(), kb)
+        await safe_edit_text(query, home_text(), kb, link_preview_options=home_preview())
         track_panel(context, query.message)
         return
 
@@ -108,7 +165,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_message:
         await safe_delete_msg(context, chat_id, update.effective_message.message_id)  # رسالة الأمر نفسها
     await drop_old_panel(context)  # الشاشة الفعّالة السابقة
-    sent = await context.bot.send_message(chat_id, home_text(), reply_markup=kb, parse_mode="Markdown")
+    sent = await context.bot.send_message(
+        chat_id, home_text(), reply_markup=kb, parse_mode="Markdown", link_preview_options=home_preview()
+    )
     track_panel(context, sent)
 
 

@@ -10,7 +10,7 @@ from typing import Any, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import requests
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions
 from telegram.error import BadRequest, TelegramError
 from telegram.ext import CallbackQueryHandler, ContextTypes
 
@@ -45,17 +45,27 @@ async def safe_delete_msg(context: ContextTypes.DEFAULT_TYPE, chat_id: int, msg_
         pass
 
 
-async def safe_edit_text(query, text: str, reply_markup: Optional[InlineKeyboardMarkup] = None) -> None:
-    """يعدّل الرسالة بـ Markdown، وإن رفض تيليجرام التنسيق يعيد المحاولة نصًا عاديًا."""
+async def safe_edit_text(
+    query,
+    text: str,
+    reply_markup: Optional[InlineKeyboardMarkup] = None,
+    link_preview_options: Optional[LinkPreviewOptions] = None,
+) -> None:
+    """يعدّل الرسالة بـ Markdown، وإن رفض تيليجرام التنسيق يعيد المحاولة نصًا عاديًا.
+    بدون link_preview_options تُعرض الشاشة بلا معاينة روابط (يلغي معاينة الصورة عند الانتقال لأي قسم)."""
+    if link_preview_options is None:
+        link_preview_options = LinkPreviewOptions(is_disabled=True)
     try:
-        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        await query.edit_message_text(
+            text, reply_markup=reply_markup, parse_mode="Markdown", link_preview_options=link_preview_options
+        )
     except BadRequest as e:
         err = str(e).lower()
         if "not modified" in err:
             return
         if "parse entities" in err:
             try:
-                await query.edit_message_text(text, reply_markup=reply_markup)
+                await query.edit_message_text(text, reply_markup=reply_markup, link_preview_options=link_preview_options)
             except BadRequest as e2:
                 if "not modified" not in str(e2).lower():
                     logger.warning("BadRequest عند تعديل رسالة: %s", e2)

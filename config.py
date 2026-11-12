@@ -33,3 +33,8 @@ OWNER_NAME = "حامد"
 ITEMS_PER_PAGE = 8  # عدد الأزرار في كل صفحة من القوائم
 DATA_DIR = "data"   # ملفات json للأقسام الجديدة (الإذاعة تستخدم data/radio.json)
 TZ_NAME = os.environ.get("TZ_NAME", "Asia/Riyadh")
+
+# 🖼️ صورة الشاشة الرئيسية: رابط مباشر للصورة (مثال: raw.githubusercontent.com/...). فارغ = بدون صورة.
+HOME_IMAGE_URL = (os.environ.get("HOME_IMAGE_URL") or "").strip() or None
+# "1" = الصورة فوق النص، غير ذلك = تحت النص (فوق الأزرار مباشرة)
+HOME_IMAGE_ABOVE = (os.environ.get("HOME_IMAGE_ABOVE") or "").strip() == "1"
