@@ -9,8 +9,8 @@ config.py : الإعدادات (متغيرات البيئة).   utils.py : أد�
 import asyncio
 import logging
 import os
-import random
 import threading
+from datetime import date, timedelta
 from typing import Optional
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -40,7 +40,7 @@ import quran
 import radio
 import todo
 import workout
-from utils import TZ, claim_panel, drop_old_panel, grid, now, restore_data_dir, safe_delete_msg, safe_edit_text, today, today_str, track_panel
+from utils import TZ, claim_panel, drop_old_panel, grid, restore_data_dir, safe_delete_msg, safe_edit_text, today, today_str, track_panel
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 # httpx يطبع روابط الطلبات وفيها توكن البوت — نخفيها من لوج Render
@@ -50,16 +50,6 @@ logger = logging.getLogger("bot")
 
 # ترتيب الظهور في القائمة الرئيسية
 SECTIONS = [todo, quran, english, qudrat, workout, radio]
-
-MOTIVATION = [
-    "Create your own effect. ⏳",
-    "No weakness here. Push forward! 🥊",
-    "Small daily victories, big success. 💪",
-    "One Day is built today. 🎯",
-    "Work hard in silence. ✨",
-    "Discipline today, freedom tomorrow. 🔥",
-    "You're not behind. You're building. 🚀",
-]
 
 
 async def owner_guard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -91,23 +81,25 @@ def home_preview() -> Optional[LinkPreviewOptions]:
 
 
 def live_status() -> str:
-    """الشاشة الحية: تقييم اليوم + مهام اليوم. أي خطأ في القراءة لا يكسر الرئيسية."""
+    """الشاشة الحية: تقييم أمس + مهام اليوم. أي خطأ في القراءة لا يكسر الرئيسية."""
     try:
         db = todo.load_archived()  # استيراد todo هنا آمن: todo لا يستورد main
         today_iso = today_str()
 
-        # ⭐ تقييم اليوم
-        if today() < todo.RATING_START:
-            rating = f"⭐ **تقييم اليوم:** {todo.before_start_sentence()}"
-        elif today_iso in db["ratings"]:
-            score = db["ratings"][today_iso]
+        # ⭐ تقييم أمس
+        yesterday = today() - timedelta(days=1)
+        yesterday_iso = yesterday.isoformat()
+        if yesterday < todo.RATING_START:
+            rating = f"⭐ **تقييم أمس:** {todo.before_start_sentence()}"
+        elif yesterday_iso in db["ratings"]:
+            score = db["ratings"][yesterday_iso]
             rating = (
-                f"⭐ **تقييم اليوم:** {score}/{todo.MAX_SCORE}\n"
+                f"⭐ **تقييم أمس:** {score}/{todo.MAX_SCORE}\n"
                 f"{todo.bar(score, todo.MAX_SCORE)} {todo.pct_of(score, todo.MAX_SCORE)}%"
             )
         else:
-            rating = "⭐ **تقييم اليوم:** لم يُقيَّم بعد"
-        pending = todo.pending_dates(db)
+            rating = "⭐ **تقييم أمس:** لم يُقيَّم بعد"
+        pending = [d for d in todo.pending_dates(db) if d != yesterday_iso]  # أمس معروض أعلاه
         if pending:
             rating += f"\n📌 أيام سابقة غير مقيَّمة: {todo.days_word(len(pending))}"
 
@@ -125,18 +117,34 @@ def live_status() -> str:
         return ""
 
 
+HIJRI_MONTHS = {
+    1: "المحرم", 2: "صفر", 3: "ربيع الأول", 4: "ربيع الآخر", 5: "جمادى الأولى", 6: "جمادى الآخرة",
+    7: "رجب", 8: "شعبان", 9: "رمضان", 10: "شوال", 11: "ذو القعدة", 12: "ذو الحجة",
+}
+
+
+def hijri_text(d: date) -> str:
+    """التاريخ الهجري (أم القرى) بدون اسم اليوم، مثل: 2 جمادى الأولى 1448 هـ."""
+    from hijri_converter import Gregorian  # استيراد متأخر: أي مشكلة فيه لا تكسر تشغيل البوت
+
+    h = Gregorian(d.year, d.month, d.day).to_hijri()
+    return f"{h.day} {HIJRI_MONTHS[h.month]} {h.year} هـ"
+
+
 def home_text() -> str:
-    n = now()
-    live = live_status()
-    return (
-        "**يوماً ما | One Day ⏳💪**\n"
-        "━━━━━━━ • ✨ • ━━━━━━━\n\n"
-        f"يا هلا {OWNER_NAME} 👋\n"
-        f"🔥 {random.choice(MOTIVATION)}\n\n"
-        f"📅 {todo.fmt_date(n.date())} • 🕒 {todo.fmt_time(n)}\n\n"
-        + (f"{live}\n\n" if live else "")
-        + "👇 اختر القسم:"
-    )
+    d = today()
+    dates = f"🗓️ {todo.fmt_date(d)}"
+    try:
+        dates = f"📅 {hijri_text(d)}\n{dates}"
+    except Exception:  # noqa: BLE001
+        logger.exception("تعذّر تحويل التاريخ الهجري")
+    parts = [
+        "**يوماً ما | One Day ⏳💪**\n━━━━━━━ • ✨ • ━━━━━━━",
+        f"يا هلا {OWNER_NAME} 👋",
+        dates,
+        live_status(),
+    ]
+    return "\n\n".join(p for p in parts if p)
 
 
 def home_keyboard() -> InlineKeyboardMarkup:
@@ -193,8 +201,6 @@ async def post_init(app) -> None:
             [BotCommand("start", "⏳ اللوحة الرئيسية")],
             scope=BotCommandScopeChat(chat_id=ALLOWED_USER_ID),
         )
-        await app.bot.set_my_short_description("")  # وصف فارغ حتى لا يظهر نص قبل /start
-        await app.bot.set_my_description("")
     except TelegramError as e:
         logger.warning("تعذّر ضبط أوامر/وصف البوت: %s", e)
 
