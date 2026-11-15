@@ -1,5 +1,34 @@
 {
-    "tasks": [],
+    "tasks": [
+        {
+            "id": "t1",
+            "text": "يوسف والرعد وإبراهيم",
+            "completed": false,
+            "created_at": "2026-11-15",
+            "done_at": null
+        },
+        {
+            "id": "t2",
+            "text": "المؤمنون والنور والفرقان",
+            "completed": false,
+            "created_at": "2026-11-15",
+            "done_at": null
+        },
+        {
+            "id": "t3",
+            "text": "البوت",
+            "completed": false,
+            "created_at": "2026-11-15",
+            "done_at": null
+        },
+        {
+            "id": "t4",
+            "text": "اختبار رياضيات",
+            "completed": false,
+            "created_at": "2026-11-15",
+            "done_at": null
+        }
+    ],
     "ratings": {
         "2026-11-01": 20,
         "2026-11-02": 20,
