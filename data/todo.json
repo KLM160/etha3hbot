@@ -1,5 +1,27 @@
 {
-    "tasks": [],
+    "tasks": [
+        {
+            "id": "t1",
+            "text": "ربط",
+            "completed": false,
+            "created_at": "2026-11-18",
+            "done_at": null
+        },
+        {
+            "id": "t2",
+            "text": "مراجعة",
+            "completed": false,
+            "created_at": "2026-11-18",
+            "done_at": null
+        },
+        {
+            "id": "t3",
+            "text": "ملخص القوانين ١-٩",
+            "completed": false,
+            "created_at": "2026-11-18",
+            "done_at": null
+        }
+    ],
     "ratings": {
         "2026-11-01": 20,
         "2026-11-02": 20,
