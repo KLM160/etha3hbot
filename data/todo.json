@@ -1,13 +1,5 @@
 {
-    "tasks": [
-        {
-            "id": "t3",
-            "text": "ملخص القوانين ١-٩",
-            "completed": false,
-            "created_at": "2026-11-18",
-            "done_at": null
-        }
-    ],
+    "tasks": [],
     "ratings": {
         "2026-11-01": 20,
         "2026-11-02": 20,
