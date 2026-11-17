@@ -45,9 +45,9 @@
         {
             "id": "t10",
             "text": "المنصة",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-17",
-            "done_at": null
+            "done_at": "2026-11-17"
         }
     ],
     "ratings": {
