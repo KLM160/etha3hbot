@@ -45,9 +45,9 @@
         {
             "id": "t11",
             "text": "واجب أحياء",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-17",
-            "done_at": null
+            "done_at": "2026-11-17"
         },
         {
             "id": "t12",
