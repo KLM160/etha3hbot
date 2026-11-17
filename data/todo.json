@@ -1,13 +1,6 @@
 {
     "tasks": [
         {
-            "id": "t1",
-            "text": "ربط",
-            "completed": false,
-            "created_at": "2026-11-18",
-            "done_at": null
-        },
-        {
             "id": "t2",
             "text": "مراجعة",
             "completed": false,
