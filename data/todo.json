@@ -41,6 +41,27 @@
             "completed": true,
             "created_at": "2026-11-17",
             "done_at": "2026-11-17"
+        },
+        {
+            "id": "t11",
+            "text": "واجب أحياء",
+            "completed": false,
+            "created_at": "2026-11-17",
+            "done_at": null
+        },
+        {
+            "id": "t12",
+            "text": "واجب إنجليزي",
+            "completed": false,
+            "created_at": "2026-11-17",
+            "done_at": null
+        },
+        {
+            "id": "t13",
+            "text": "منصة تطوع",
+            "completed": false,
+            "created_at": "2026-11-17",
+            "done_at": null
         }
     ],
     "ratings": {
