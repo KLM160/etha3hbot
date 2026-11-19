@@ -1,5 +1,27 @@
 {
-    "tasks": [],
+    "tasks": [
+        {
+            "id": "t1",
+            "text": "ربط جزء يوسف",
+            "completed": false,
+            "created_at": "2026-11-20",
+            "done_at": null
+        },
+        {
+            "id": "t2",
+            "text": "جزء الكهف",
+            "completed": false,
+            "created_at": "2026-11-20",
+            "done_at": null
+        },
+        {
+            "id": "t3",
+            "text": "ملف القوانين ٧-٢٠",
+            "completed": false,
+            "created_at": "2026-11-20",
+            "done_at": null
+        }
+    ],
     "ratings": {
         "2026-11-01": 20,
         "2026-11-02": 20,
