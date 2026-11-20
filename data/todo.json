@@ -10,9 +10,9 @@
         {
             "id": "t2",
             "text": "جزء الكهف",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-20",
-            "done_at": null
+            "done_at": "2026-11-20"
         },
         {
             "id": "t3",
