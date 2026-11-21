@@ -17,9 +17,9 @@
         {
             "id": "t3",
             "text": "الدوريات والأنماط",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-21",
-            "done_at": null
+            "done_at": "2026-11-21"
         },
         {
             "id": "t4",
