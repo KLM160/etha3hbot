@@ -16,8 +16,18 @@
     },
     "mock_tests": [],
     "study_stats": {
-        "quant_questions": 0,
-        "verbal_questions": 0
+        "quant_questions": 25,
+        "verbal_questions": 0,
+        "last": {
+            "kind": "quant",
+            "n": 25,
+            "date": "2026-11-21"
+        }
     },
-    "daily": {}
+    "daily": {
+        "2026-11-21": {
+            "quant": 25,
+            "verbal": 0
+        }
+    }
 }
