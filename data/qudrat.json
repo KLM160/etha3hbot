@@ -16,17 +16,12 @@
     },
     "mock_tests": [],
     "study_stats": {
-        "quant_questions": 50,
-        "verbal_questions": 0,
-        "last": {
-            "kind": "quant",
-            "n": 25,
-            "date": "2026-11-21"
-        }
+        "quant_questions": 25,
+        "verbal_questions": 0
     },
     "daily": {
         "2026-11-21": {
-            "quant": 50,
+            "quant": 25,
             "verbal": 0
         }
     }
