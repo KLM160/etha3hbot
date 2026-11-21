@@ -31,9 +31,9 @@
         {
             "id": "t5",
             "text": "تمرين",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-21",
-            "done_at": null
+            "done_at": "2026-11-21"
         }
     ],
     "ratings": {
