@@ -29,7 +29,7 @@
     },
     "mock_tests": [],
     "study_stats": {
-        "quant_questions": 50,
+        "quant_questions": 75,
         "verbal_questions": 0,
         "last": {
             "kind": "quant",
@@ -39,7 +39,7 @@
     },
     "daily": {
         "2026-11-21": {
-            "quant": 50,
+            "quant": 75,
             "verbal": 0
         }
     }
