@@ -80,8 +80,8 @@ def home_preview() -> Optional[LinkPreviewOptions]:
     )
 
 
-def live_status() -> str:
-    """الشاشة الحية: تقييم أمس + مهام اليوم. أي خطأ في القراءة لا يكسر الرئيسية."""
+def todo_status() -> str:
+    """تقييم أمس + مهام اليوم. أي خطأ في القراءة لا يكسر الرئيسية."""
     try:
         db = todo.load_archived()  # استيراد todo هنا آمن: todo لا يستورد main
         today_iso = today_str()
@@ -115,6 +115,17 @@ def live_status() -> str:
     except Exception:  # noqa: BLE001
         logger.exception("تعذّر بناء الشاشة الحية")
         return ""
+
+
+def live_status() -> str:
+    """الشاشة الحية: عداد القدرات + تقييم أمس + مهام اليوم. كل جزء معزول فلا يُسقط فشلُ أحدها البقية."""
+    parts = []
+    try:
+        parts.append(qudrat.exam_countdown_line())
+    except Exception:  # noqa: BLE001
+        logger.exception("تعذّر بناء عداد القدرات")
+    parts.append(todo_status())
+    return "\n\n".join(p for p in parts if p)
 
 
 HIJRI_MONTHS = {
