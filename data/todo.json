@@ -10,9 +10,9 @@
         {
             "id": "t4",
             "text": "جزء المؤمنون",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-22",
-            "done_at": null
+            "done_at": "2026-11-23"
         }
     ],
     "ratings": {
