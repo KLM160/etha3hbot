@@ -1,5 +1,55 @@
 {
-    "tasks": [],
+    "tasks": [
+        {
+            "id": "t1",
+            "text": "درس الإحصاء",
+            "completed": false,
+            "created_at": "2026-11-23",
+            "done_at": null
+        },
+        {
+            "id": "t2",
+            "text": "تمرين على الفرق بين مربعين",
+            "completed": false,
+            "created_at": "2026-11-23",
+            "done_at": null
+        },
+        {
+            "id": "t3",
+            "text": "درس متفرقات في القدرات",
+            "completed": false,
+            "created_at": "2026-11-23",
+            "done_at": null
+        },
+        {
+            "id": "t4",
+            "text": "ربط جزء يوسف",
+            "completed": false,
+            "created_at": "2026-11-23",
+            "done_at": null
+        },
+        {
+            "id": "t5",
+            "text": "مراجعة جزء العنكبوت",
+            "completed": false,
+            "created_at": "2026-11-23",
+            "done_at": null
+        },
+        {
+            "id": "t6",
+            "text": "إتقان سورة النور",
+            "completed": false,
+            "created_at": "2026-11-23",
+            "done_at": null
+        },
+        {
+            "id": "t7",
+            "text": "تمرين",
+            "completed": false,
+            "created_at": "2026-11-23",
+            "done_at": null
+        }
+    ],
     "ratings": {
         "2026-11-01": 20,
         "2026-11-02": 20,
