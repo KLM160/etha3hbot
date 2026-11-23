@@ -10,9 +10,9 @@
         {
             "id": "t2",
             "text": "تمرين على الفرق بين مربعين",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-23",
-            "done_at": null
+            "done_at": "2026-11-23"
         },
         {
             "id": "t3",
