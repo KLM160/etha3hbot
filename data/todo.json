@@ -13,6 +13,34 @@
             "completed": false,
             "created_at": "2026-11-24",
             "done_at": null
+        },
+        {
+            "id": "t3",
+            "text": "قابلية القسمة",
+            "completed": false,
+            "created_at": "2026-11-25",
+            "done_at": null
+        },
+        {
+            "id": "t4",
+            "text": "ربط يوسف",
+            "completed": false,
+            "created_at": "2026-11-25",
+            "done_at": null
+        },
+        {
+            "id": "t5",
+            "text": "مراجعة الأحزاب",
+            "completed": false,
+            "created_at": "2026-11-25",
+            "done_at": null
+        },
+        {
+            "id": "t6",
+            "text": "اتقان النور",
+            "completed": false,
+            "created_at": "2026-11-25",
+            "done_at": null
         }
     ],
     "ratings": {
