@@ -25,6 +25,19 @@
                 }
             ],
             "created": "2026-11-21"
+        },
+        "i1795482377326": {
+            "title": "الاحصاء",
+            "category": "quant",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAIGfmsE4wHUy8q8F3LhKyPKx0At07YeAALZJAACbUgoULJijtGzkhUrPQQ",
+                    "type": "document",
+                    "text": null,
+                    "caption": null
+                }
+            ],
+            "created": "2026-11-24"
         }
     },
     "mock_tests": [],
