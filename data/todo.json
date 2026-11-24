@@ -1,5 +1,27 @@
 {
-    "tasks": [],
+    "tasks": [
+        {
+            "id": "t1",
+            "text": "تمرين على الإحصاء",
+            "completed": false,
+            "created_at": "2026-11-24",
+            "done_at": null
+        },
+        {
+            "id": "t2",
+            "text": "المتفرقات في القدرات",
+            "completed": false,
+            "created_at": "2026-11-24",
+            "done_at": null
+        },
+        {
+            "id": "t3",
+            "text": "إتقان سورة النور",
+            "completed": false,
+            "created_at": "2026-11-24",
+            "done_at": null
+        }
+    ],
     "ratings": {
         "2026-11-01": 20,
         "2026-11-02": 20,
