@@ -38,6 +38,19 @@
                 }
             ],
             "created": "2026-11-24"
+        },
+        "i1795569690284": {
+            "title": "دروس بنوك4",
+            "category": "quant",
+            "files": [
+                {
+                    "file_id": "BQACAgQAAxkBAAIGiWsGOBEpj9bNLBNDCKiODi3uylwvAAJkHwACLhQBU-hbmI9yDy23PQQ",
+                    "type": "document",
+                    "text": null,
+                    "caption": null
+                }
+            ],
+            "created": "2026-11-25"
         }
     },
     "mock_tests": [],
