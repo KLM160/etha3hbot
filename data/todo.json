@@ -17,9 +17,9 @@
         {
             "id": "t5",
             "text": "مراجعة الأحزاب",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-25",
-            "done_at": null
+            "done_at": "2026-11-26"
         },
         {
             "id": "t6",
