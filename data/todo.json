@@ -24,9 +24,9 @@
         {
             "id": "t4",
             "text": "تمرين على درس قوانين هامة",
-            "completed": false,
+            "completed": true,
             "created_at": "2026-11-26",
-            "done_at": null
+            "done_at": "2026-11-27"
         }
     ],
     "ratings": {
